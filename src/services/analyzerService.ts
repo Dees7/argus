@@ -559,30 +559,41 @@ class CompactionDetectedRule implements AnalysisRule {
     const compactions: Compaction[] = [];
     let prevFull = -1;
 
-    for (const step of steps) {
-      const full = step.usage
-        ? step.usage.input_tokens +
-          step.usage.cache_creation_input_tokens +
-          step.usage.cache_read_input_tokens
-        : -1;
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
 
-      if (step.postCompact) {
-        // The marked step may be a tool call, which carries no usage; fall
-        // back to a zero drop rather than skipping a boundary we know exists.
-        const drop = prevFull > 0 && full > 0 ? prevFull - full : 0;
+      if (step.type === 'compact') {
+        // The compact step carries no usage of its own — the shrunken context
+        // first shows up on the next step that has any.
+        const nextFull = this.fullContext(steps.slice(i + 1).find(s => s.usage));
+        const drop = prevFull > 0 && nextFull > 0 ? prevFull - nextFull : 0;
         compactions.push({
           stepIndex: step.index,
           dropTokens: drop,
           dropPct: drop > 0 ? drop / prevFull : 0,
         });
+        continue;
       }
 
+      const full = this.fullContext(step);
       if (full > 0) {
         prevFull = full;
       }
     }
 
     return compactions;
+  }
+
+  /** Whole prompt the step was billed for, cached parts included. */
+  private fullContext(step?: Step): number {
+    if (!step?.usage) {
+      return -1;
+    }
+    return (
+      step.usage.input_tokens +
+      step.usage.cache_creation_input_tokens +
+      step.usage.cache_read_input_tokens
+    );
   }
 
   /**

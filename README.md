@@ -196,6 +196,12 @@ Argus exposes the following VS Code settings:
 
 ### Compaction detection
 
+A compaction is recorded in the transcript as a user event carrying the hand-off
+summary that replaces the dropped history — there is no assistant message for
+it. Argus turns that event into a `compact` step, so the boundary is visible in
+the Steps tab as a dashed divider row; expanding it shows the summary the next
+steps actually ran on. This is independent of the setting below.
+
 By default the `Context Compaction` finding is inferred from a drop in
 `input + cache_creation` tokens between consecutive steps. That signal is not
 specific: an ordinary prompt-cache rotation — a step whose prompt had to be

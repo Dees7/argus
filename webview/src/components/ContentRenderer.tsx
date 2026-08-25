@@ -41,6 +41,7 @@ interface Props {
 const KIND_LABEL: Record<string, string> = {
   text: 'Text',
   thinking: 'Thinking',
+  compact: 'Compaction Summary',
 };
 
 const ContentRenderer = ({ step }: Props) => {

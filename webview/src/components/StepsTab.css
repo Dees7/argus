@@ -316,6 +316,7 @@
 .step-icon-thinking { color: #A78BCA; }
 .step-icon-text    { color: #858B97; }
 .step-icon-error   { color: #D97A7A; }
+.step-icon-compact { color: #C8956A; }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {
@@ -412,6 +413,22 @@
 
 .step-item-error .step-icon {
   color: var(--status-error);
+}
+
+/* Compaction boundary — a structural marker rather than a step Claude took,
+   so it reads as a divider: tinted row, dashed border, no cost of its own. */
+.step-item-compact {
+  background: color-mix(in srgb, var(--status-warning) 7%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--status-warning);
+  border-style: dashed;
+}
+
+.step-item-compact:hover {
+  background: color-mix(in srgb, var(--status-warning) 11%, transparent);
+}
+
+.step-item-compact .step-type {
+  color: var(--status-warning);
 }
 
 .step-right {

@@ -188,10 +188,6 @@ export class ParserService {
     // Track tool calls and their results
     const toolCallMap = new Map<string, Partial<Step>>();
 
-    // Set by an `isCompactSummary` user event, consumed by the next step —
-    // see Step.postCompact.
-    let pendingCompactBoundary = false;
-
     for (const event of events) {
       // Extract model
       if (!model && event.message?.model && event.message.model !== '<synthetic>') {
@@ -209,11 +205,20 @@ export class ParserService {
         }
       }
 
-      // Context compaction. Claude Code writes it as a user event holding the
-      // hand-off summary — no step of its own, so remember it and tag the next
-      // step, which is the first one running on the compacted context.
+      // Context compaction. Claude Code records it as a user event carrying
+      // the hand-off summary that replaces the dropped history — there is no
+      // assistant message for it, so give it a step of its own to keep the
+      // boundary visible in the timeline.
       if (event.type === 'user' && event.isCompactSummary === true) {
-        pendingCompactBoundary = true;
+        steps.push({
+          index: steps.length,
+          type: 'compact',
+          timestamp: new Date(event.timestamp),
+          uuid: event.uuid,
+          messageId: event.message?.id ?? '',
+          content: this.extractTextContent(event.message?.content),
+          cost: 0,
+        });
       }
 
       // Process assistant messages
@@ -221,8 +226,6 @@ export class ParserService {
         const usage = event.message.usage;
         const cost = usage ? this.calculateCost(usage, model) : 0;
         totalCost += cost;
-
-        const stepsBefore = steps.length;
 
         // Ensure content is an array
         const content = Array.isArray(event.message.content) ? event.message.content : [];
@@ -286,11 +289,6 @@ export class ParserService {
               filesWritten.add(block.input.file_path);
             }
           }
-        }
-
-        if (pendingCompactBoundary && steps.length > stepsBefore) {
-          steps[stepsBefore].postCompact = true;
-          pendingCompactBoundary = false;
         }
       }
 
@@ -521,6 +519,24 @@ export class ParserService {
       // ignore
     }
 
+    return '';
+  }
+
+  /**
+   * Whole text of a message body, untruncated. Compaction summaries arrive as
+   * a plain string, but the block-array shape is handled too so the step keeps
+   * its content if the format changes.
+   */
+  private extractTextContent(content: any): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .filter(block => block?.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text)
+        .join('\n');
+    }
     return '';
   }
 

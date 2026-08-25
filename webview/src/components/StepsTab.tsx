@@ -103,6 +103,13 @@ const StepIcon = ({ step }: { step: Step }) => {
           <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
         </svg>
       );
+    case 'compact':
+      // Arrows folding inward — the history collapsing into a summary.
+      return (
+        <svg className="step-icon step-icon-compact" {...stepIconProps} stroke="currentColor">
+          <path d="M4 9h6V3"/><path d="M20 9h-6V3"/><path d="M4 15h6v6"/><path d="M20 15h-6v6"/>
+        </svg>
+      );
     default:
       return (
         <svg className="step-icon step-icon-default" {...stepIconProps} stroke="currentColor">
@@ -425,7 +432,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (key === 'thinking' || key === 'text') {
+      if (key === 'thinking' || key === 'text' || key === 'compact') {
         types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
       } else {
         tools.push({ value: key, label: key, count });
@@ -546,6 +553,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
   };
 
   const getStepSummary = (step: Step): string => {
+    if (step.type === 'compact') return 'context compacted — history replaced by a summary';
     if (!step.toolName || !step.toolInput) return '';
 
     try {
@@ -701,6 +709,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                 isHighlighted ? 'highlight' : '',
                 hasIssues ? 'has-issues' : '',
                 step.toolSuccess === false ? 'step-item-error' : '',
+                step.type === 'compact' ? 'step-item-compact' : '',
                 isAgent ? 'step-item-agent' : '',
                 linkedAgents && !allCollapsed ? 'step-item-task' : '',
                 isFirstAgentInRun ? 'step-agent-first' : '',
@@ -824,7 +833,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                     </div>
                   )}
 
-                  {(step.type === 'text' || step.type === 'thinking') && step.content && (
+                  {(step.type === 'text' || step.type === 'thinking' || step.type === 'compact') && step.content && (
                     <div className="detail-section">
                       <RendererErrorBoundary
                         fallback={(err) => (
