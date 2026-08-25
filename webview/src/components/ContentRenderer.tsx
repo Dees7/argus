@@ -42,6 +42,7 @@ const KIND_LABEL: Record<string, string> = {
   text: 'Text',
   thinking: 'Thinking',
   compact: 'Compaction Summary',
+  user: 'User Prompt',
 };
 
 const ContentRenderer = ({ step }: Props) => {

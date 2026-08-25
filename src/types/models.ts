@@ -65,7 +65,14 @@ export interface SessionDetail {
   analysis?: AnalysisResult;
 }
 
-export type StepType = 'thinking' | 'tool_call' | 'text' | 'error' | 'subagent' | 'compact';
+export type StepType =
+  | 'thinking'
+  | 'tool_call'
+  | 'text'
+  | 'error'
+  | 'subagent'
+  | 'compact'
+  | 'user';
 
 export interface Step {
   index: number;

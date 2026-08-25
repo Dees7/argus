@@ -29,6 +29,10 @@ export interface RawEvent {
   // dropped history. The only unambiguous compaction marker in a transcript.
   isCompactSummary?: boolean;
 
+  // Marks a user event the harness generated rather than the person typing —
+  // command caveats and similar bookkeeping.
+  isMeta?: boolean;
+
   // Progress-specific
   data?: any;
 

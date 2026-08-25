@@ -5,6 +5,31 @@ import { RawEvent } from '../types/parser';
 import { HistoryEntry, SessionDetail, Step, SubagentInfo } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 
+/**
+ * Wrappers the harness injects into a user turn — IDE state, hook output,
+ * reminders, agent notifications. A text block that is nothing but one of
+ * these was not typed by anyone, so it never becomes a user step. Blocks the
+ * person did produce, slash commands included, are kept.
+ */
+const INJECTED_BLOCK_TAGS = [
+  'ide_opened_file',
+  'ide_selection',
+  'system-reminder',
+  'local-command-caveat',
+  'local-command-stdout',
+  'task-notification',
+];
+
+const INJECTED_BLOCK_RE = new RegExp(
+  `<(${INJECTED_BLOCK_TAGS.join('|')})>[\\s\\S]*?</\\1>`,
+  'g'
+);
+
+// A slash command is stored as its own little XML document. Rendered raw it
+// buries the one interesting part, so it collapses back to what was typed.
+const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
+const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
+
 interface QuickMetadata {
   model: string;
   firstTimestamp: string;
@@ -202,6 +227,30 @@ export class ParserService {
         }
         if (!endTime || ts > endTime) {
           endTime = ts;
+        }
+      }
+
+      // What the user actually typed. Tool results ride on user events too,
+      // so they are filtered out — by `toolUseResult` where it is present, and
+      // by the content shape for the sub-agent transcripts that omit it.
+      if (event.type === 'user' && !event.isCompactSummary && !event.isMeta && !event.toolUseResult) {
+        const content = event.message?.content;
+        const isToolResult =
+          Array.isArray(content) && content.some((block: any) => block?.type === 'tool_result');
+
+        if (!isToolResult) {
+          const text = this.extractUserInput(content);
+          if (text) {
+            steps.push({
+              index: steps.length,
+              type: 'user',
+              timestamp: new Date(event.timestamp),
+              uuid: event.uuid,
+              messageId: event.message?.id ?? '',
+              content: text,
+              cost: 0,
+            });
+          }
         }
       }
 
@@ -520,6 +569,45 @@ export class ParserService {
     }
 
     return '';
+  }
+
+  /**
+   * The typed part of a user turn: every text block, minus the injected ones,
+   * joined in order. A turn is often split across blocks — an
+   * `<ide_opened_file>` wrapper followed by the actual message — so taking the
+   * first block alone would miss the message entirely.
+   */
+  private extractUserInput(content: any): string {
+    const texts: string[] =
+      typeof content === 'string'
+        ? [content]
+        : Array.isArray(content)
+          ? content
+              .filter(block => block?.type === 'text' && typeof block.text === 'string')
+              .map(block => block.text)
+          : [];
+
+    return texts
+      .map(text => this.cleanUserText(text))
+      .filter(text => text !== '')
+      .join('\n\n');
+  }
+
+  /**
+   * Strip injected wrappers and unwrap a slash command. The wrappers are cut
+   * wherever they sit, not just when they make up the whole block — the IDE
+   * ones are frequently glued to the front of the message itself.
+   */
+  private cleanUserText(text: string): string {
+    const stripped = text.replace(INJECTED_BLOCK_RE, '').trim();
+
+    const name = stripped.match(COMMAND_NAME_RE);
+    if (name) {
+      const args = stripped.match(COMMAND_ARGS_RE);
+      return [name[1].trim(), args?.[1].trim()].filter(Boolean).join(' ');
+    }
+
+    return stripped;
   }
 
   /**

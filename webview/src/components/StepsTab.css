@@ -317,6 +317,7 @@
 .step-icon-text    { color: #858B97; }
 .step-icon-error   { color: #D97A7A; }
 .step-icon-compact { color: #C8956A; }
+.step-icon-user    { color: #7EA6D9; }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {
@@ -429,6 +430,25 @@
 
 .step-item-compact .step-type {
   color: var(--status-warning);
+}
+
+/* User turn — where the session changes direction, so it reads as the start
+   of a block rather than one more step in the run. */
+.step-item-user {
+  background: color-mix(in srgb, var(--status-info, #7EA6D9) 7%, transparent);
+  box-shadow: inset 3px 0 0 0 #7EA6D9;
+}
+
+.step-item-user:hover {
+  background: color-mix(in srgb, var(--status-info, #7EA6D9) 11%, transparent);
+}
+
+.step-item-user .step-type {
+  color: #7EA6D9;
+}
+
+.step-item-user .step-summary {
+  color: var(--text);
 }
 
 .step-right {

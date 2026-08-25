@@ -103,6 +103,12 @@ const StepIcon = ({ step }: { step: Step }) => {
           <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
         </svg>
       );
+    case 'user':
+      return (
+        <svg className="step-icon step-icon-user" {...stepIconProps} stroke="currentColor">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+      );
     case 'compact':
       // Arrows folding inward — the history collapsing into a summary.
       return (
@@ -432,7 +438,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (key === 'thinking' || key === 'text' || key === 'compact') {
+      if (key === 'thinking' || key === 'text' || key === 'compact' || key === 'user') {
         types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
       } else {
         tools.push({ value: key, label: key, count });
@@ -554,6 +560,8 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
 
   const getStepSummary = (step: Step): string => {
     if (step.type === 'compact') return 'context compacted — history replaced by a summary';
+    // First line of the prompt, so a turn is recognisable while collapsed.
+    if (step.type === 'user') return (step.content || '').split('\n')[0];
     if (!step.toolName || !step.toolInput) return '';
 
     try {
@@ -710,6 +718,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                 hasIssues ? 'has-issues' : '',
                 step.toolSuccess === false ? 'step-item-error' : '',
                 step.type === 'compact' ? 'step-item-compact' : '',
+                step.type === 'user' ? 'step-item-user' : '',
                 isAgent ? 'step-item-agent' : '',
                 linkedAgents && !allCollapsed ? 'step-item-task' : '',
                 isFirstAgentInRun ? 'step-agent-first' : '',
@@ -833,7 +842,10 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                     </div>
                   )}
 
-                  {(step.type === 'text' || step.type === 'thinking' || step.type === 'compact') && step.content && (
+                  {(step.type === 'text' ||
+                    step.type === 'thinking' ||
+                    step.type === 'compact' ||
+                    step.type === 'user') && step.content && (
                     <div className="detail-section">
                       <RendererErrorBoundary
                         fallback={(err) => (

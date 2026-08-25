@@ -105,7 +105,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 
 | Tab | What's inside |
 | --- | --- |
-| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons |
+| **Steps** | Full execution log with text search, multi-tool filter, status filter, sort by time/cost, per-step duration, per-tool icons; user turns and compaction boundaries appear as their own rows |
 | **Analysis** | All findings from the rule engine with severity, evidence, and jump-to-step links |
 | **Cost** | Token & USD breakdown, model attribution, cache-hit ratio, spending charts |
 | **Performance** | Efficiency score, wasted-cost estimate, bottleneck timing |
@@ -193,6 +193,16 @@ Argus exposes the following VS Code settings:
 | `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
 | `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
 | `argus.analysis.realCompactsOnly` | `false` | Report a compaction only where the transcript marks one, instead of inferring it from a token drop |
+
+### User turns in the Steps tab
+
+What the user typed shows up as a `user` step. A turn is often split across
+several content blocks — an `<ide_opened_file>` or `<system-reminder>` wrapper
+glued to the front of the message — so Argus joins the blocks and drops the
+injected ones; a turn that is nothing but injected context produces no step.
+Slash commands collapse from their raw XML back to what was typed (`/context
+all`). Tool results, which the transcript also stores as user events, are not
+user turns and stay attached to the tool call that produced them.
 
 ### Compaction detection
 
