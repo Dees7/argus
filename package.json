@@ -203,18 +203,18 @@
     "menus": {
       "view/title": [
         {
-          "submenu": "argus.groupMenu",
-          "when": "view == argusSessionList",
-          "group": "navigation@1"
-        },
-        {
           "command": "argus.filterCurrentProjectOn",
           "when": "view == argusSessionList && !argus.filter.currentProject",
-          "group": "navigation@2"
+          "group": "navigation@1"
         },
         {
           "command": "argus.filterCurrentProjectOff",
           "when": "view == argusSessionList && argus.filter.currentProject",
+          "group": "navigation@1"
+        },
+        {
+          "submenu": "argus.groupMenu",
+          "when": "view == argusSessionList",
           "group": "navigation@2"
         },
         {
