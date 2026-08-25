@@ -263,10 +263,6 @@
   border-color: var(--border-focus);
 }
 
-.step-item.expanded {
-  border-color: var(--accent);
-}
-
 .step-item.highlight {
   border-color: var(--status-warning);
   box-shadow: 0 0 0 2px rgba(206,145,120,0.2);
