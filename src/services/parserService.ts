@@ -247,6 +247,10 @@ export class ParserService {
               content: '',
               toolName: block.name,
               toolInput: block.input,
+              // Block-level id (`toolu_…`). Sub-agent meta.json references it
+              // as `toolUseId`, which is the only way to locate the Task step
+              // that spawned a nested agent.
+              toolUseId: block.id,
               cost: 0,
             };
 
@@ -387,12 +391,19 @@ export class ParserService {
         // store internally does not.
         let agentType: string | undefined;
         let description: string | undefined;
+        let parentAgentId: string | undefined;
+        let toolUseId: string | undefined;
+        let spawnDepth: number | undefined;
         const metaPath = path.join(subagentsDir, `agent-${agentId}.meta.json`);
         if (fs.existsSync(metaPath)) {
           try {
             const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
             agentType = typeof meta.agentType === 'string' ? meta.agentType : undefined;
             description = typeof meta.description === 'string' ? meta.description : undefined;
+            // Present only for agents spawned from inside another agent.
+            parentAgentId = typeof meta.parentAgentId === 'string' ? meta.parentAgentId : undefined;
+            toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
+            spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
           } catch {
             // ignore malformed meta
           }
@@ -404,6 +415,9 @@ export class ParserService {
           model: session.model,
           agentType,
           description,
+          parentAgentId,
+          toolUseId,
+          spawnDepth,
           startTime: session.startTime,
           endTime: session.endTime,
           durationMs: session.durationMs,
@@ -423,16 +437,29 @@ export class ParserService {
   }
 
   /**
-   * Walk the main session steps, find agent-spawning tool_use calls whose
-   * result carries an `agentId`, and link the matching SubagentInfo back to
-   * the spawning step via `parentStepIndex`. Different Claude Code versions
-   * have used both "Task" and "Agent" as the tool name for the same launch
-   * primitive — we match either.
+   * Link every sub-agent to the step that spawned it via `parentStepIndex`
+   * (plus `parentAgentId` when the spawner is another agent rather than the
+   * main session).
+   *
+   * Two sources, in order of reliability:
+   *  1. `meta.json`'s `toolUseId` — matches the `tool_use` block id and works
+   *     at any nesting depth. Nested spawns have no `toolUseResult.agentId`
+   *     in the parent transcript at all, so this is the only way to place them.
+   *  2. `toolUseResult.agentId` echoed by the main session's Task step — the
+   *     fallback for older sessions written without meta.json. Claude Code has
+   *     used both "Task" and "Agent" as the tool name for the same primitive.
    */
   linkSubagentsToParents(steps: Step[], subagents: SubagentInfo[]): void {
     if (subagents.length === 0) return;
     const byId = new Map<string, SubagentInfo>();
     for (const s of subagents) byId.set(s.agentId, s);
+
+    for (const sub of subagents) {
+      if (!sub.toolUseId) continue;
+      const parentSteps = sub.parentAgentId ? byId.get(sub.parentAgentId)?.steps : steps;
+      const spawner = parentSteps?.find(st => st.toolUseId === sub.toolUseId);
+      if (spawner) sub.parentStepIndex = spawner.index;
+    }
 
     for (const step of steps) {
       if (step.toolName !== 'Task' && step.toolName !== 'Agent') continue;
@@ -442,7 +469,7 @@ export class ParserService {
         const agentId = result?.agentId;
         if (typeof agentId !== 'string') continue;
         const sub = byId.get(agentId);
-        if (sub) sub.parentStepIndex = step.index;
+        if (sub && typeof sub.parentStepIndex !== 'number') sub.parentStepIndex = step.index;
       } catch {
         // ignore unparseable results
       }

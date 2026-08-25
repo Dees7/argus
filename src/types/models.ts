@@ -78,6 +78,7 @@ export interface Step {
   toolInput?: any;
   toolResult?: string;
   toolSuccess?: boolean;
+  toolUseId?: string;
   usage?: Usage;
   cost: number;
   agentId?: string;
@@ -97,7 +98,13 @@ export interface SubagentInfo {
   model: string;
   agentType?: string;
   description?: string;
+  // Agents can spawn agents. `parentAgentId` is undefined for agents launched
+  // from the main session; otherwise `parentStepIndex` refers to a step inside
+  // that parent agent's own transcript.
+  parentAgentId?: string;
   parentStepIndex?: number;
+  toolUseId?: string;
+  spawnDepth?: number;
   startTime?: Date;
   endTime?: Date;
   durationMs?: number;
@@ -117,12 +124,13 @@ export interface SubagentInfo {
  * have a stable, unique identifier for navigation/highlighting.
  */
 export function flattenSessionSteps(session: SessionDetail): Step[] {
-  const spawnedAt = new Map<number, SubagentInfo[]>();
+  const spawnedAt = new Map<string, SubagentInfo[]>();
   for (const sub of session.subagents) {
     if (typeof sub.parentStepIndex === 'number') {
-      const arr = spawnedAt.get(sub.parentStepIndex) ?? [];
+      const k = spawnKey(sub.parentAgentId, sub.parentStepIndex);
+      const arr = spawnedAt.get(k) ?? [];
       arr.push(sub);
-      spawnedAt.set(sub.parentStepIndex, arr);
+      spawnedAt.set(k, arr);
     }
   }
 
@@ -131,28 +139,44 @@ export function flattenSessionSteps(session: SessionDetail): Step[] {
     out.push({ ...s, agentId: agentId ?? s.agentId, globalIndex: out.length });
   };
 
-  for (const main of session.steps) {
-    push(main);
-    const subs = spawnedAt.get(main.index);
-    if (!subs) continue;
-    for (const sub of subs) {
-      for (const sStep of sub.steps) {
-        push(sStep, sub.agentId);
+  // Emitting is recursive: an agent's own steps can themselves spawn agents,
+  // so each nested run is inlined right after the Task step that started it.
+  // `emitted` doubles as a cycle guard against malformed parent links.
+  const emitted = new Set<string>();
+  const emit = (steps: Step[], agentId?: string) => {
+    for (const s of steps) {
+      push(s, agentId);
+      const children = spawnedAt.get(spawnKey(agentId, s.index));
+      if (!children) continue;
+      for (const child of children) {
+        if (emitted.has(child.agentId)) continue;
+        emitted.add(child.agentId);
+        emit(child.steps, child.agentId);
       }
     }
-  }
+  };
+  emit(session.steps);
 
   // Orphan agents (no resolvable parent step) — append at the tail so they
-  // remain visible rather than disappearing entirely.
+  // remain visible rather than disappearing entirely. Unparented ones go
+  // first so any of their own children stay nested under them.
   for (const sub of session.subagents) {
-    if (typeof sub.parentStepIndex !== 'number') {
-      for (const sStep of sub.steps) {
-        push(sStep, sub.agentId);
-      }
-    }
+    if (emitted.has(sub.agentId) || typeof sub.parentStepIndex === 'number') continue;
+    emitted.add(sub.agentId);
+    emit(sub.steps, sub.agentId);
+  }
+  for (const sub of session.subagents) {
+    if (emitted.has(sub.agentId)) continue;
+    emitted.add(sub.agentId);
+    emit(sub.steps, sub.agentId);
   }
 
   return out;
+}
+
+/** Key for "agents spawned by step N of agent X" (X empty = main session). */
+export function spawnKey(agentId: string | undefined, stepIndex: number): string {
+  return `${agentId ?? ''}:${stepIndex}`;
 }
 
 export interface AnalysisResult {

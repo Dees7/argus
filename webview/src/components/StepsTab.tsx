@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Step, Subagent, Finding } from '../types/session';
+import { Step, Subagent, Finding, spawnKey } from '../types/session';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import RendererErrorBoundary from './RendererErrorBoundary';
@@ -237,18 +237,36 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     return m;
   }, [subagents]);
 
-  // main step local index → agents spawned there (for the collapse toggle on
-  // Task tool_use rows)
+  // spawnKey(parentAgentId, local step index) → agents spawned there (for the
+  // collapse toggle on Task tool_use rows). Keyed by owning agent too, since a
+  // Task row can live inside another agent's transcript.
   const agentsByParent = useMemo(() => {
-    const m = new Map<number, Subagent[]>();
+    const m = new Map<string, Subagent[]>();
     for (const s of subagents) {
       if (typeof s.parentStepIndex !== 'number') continue;
-      const arr = m.get(s.parentStepIndex) ?? [];
+      const k = spawnKey(s.parentAgentId, s.parentStepIndex);
+      const arr = m.get(k) ?? [];
       arr.push(s);
-      m.set(s.parentStepIndex, arr);
+      m.set(k, arr);
     }
     return m;
   }, [subagents]);
+
+  // agentId → itself + all ancestors, so collapsing an agent also hides the
+  // agents it spawned.
+  const agentChain = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of subagents) {
+      const chain: string[] = [];
+      let cur: Subagent | undefined = s;
+      while (cur && !chain.includes(cur.agentId)) {
+        chain.push(cur.agentId);
+        cur = cur.parentAgentId ? subagentById.get(cur.parentAgentId) : undefined;
+      }
+      m.set(s.agentId, chain);
+    }
+    return m;
+  }, [subagents, subagentById]);
 
   const toggleAgent = useCallback((agentId: string) => {
     setCollapsedAgents(prev => {
@@ -431,9 +449,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     if (statusFilter === 'failed') result = result.filter(s => s.toolSuccess === false);
     if (statusFilter === 'issues') result = result.filter(s => stepFindings.has(keyOf(s)));
 
-    // Hide steps whose owning agent the user collapsed
+    // Hide steps whose owning agent — or any of its ancestors — is collapsed
     if (collapsedAgents.size > 0) {
-      result = result.filter(s => !s.agentId || !collapsedAgents.has(s.agentId));
+      result = result.filter(s => {
+        if (!s.agentId) return true;
+        const chain = agentChain.get(s.agentId) ?? [s.agentId];
+        return !chain.some(id => collapsedAgents.has(id));
+      });
     }
 
     // Sorting — keyOf preserves chronological order for both main and agent
@@ -446,7 +468,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     }
 
     return result;
-  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents]);
+  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents, agentChain]);
 
   // Calculate duration for each step (time to next step)
   const stepDurations = useMemo(() => {
@@ -602,9 +624,11 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
           const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
+          // A Task row may itself sit inside an agent transcript, so look the
+          // spawned agents up by (owning agent, local step index).
           const linkedAgents =
-            (step.toolName === 'Task' || step.toolName === 'Agent') && !step.agentId
-              ? agentsByParent.get(step.index)
+            step.toolName === 'Task' || step.toolName === 'Agent'
+              ? agentsByParent.get(spawnKey(step.agentId, step.index))
               : undefined;
           const allCollapsed = linkedAgents
             ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
