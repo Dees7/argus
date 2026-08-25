@@ -10,6 +10,9 @@ interface Props {
   subagents: Subagent[];
   findings: Finding[];
   highlightStep: number | null;
+  // Sort order from settings (argus.steps.sortOrder); also what "Clear
+  // filters" resets to. Defaults to 'newest' for callers without a config.
+  defaultSortMode?: string;
 }
 
 /* ── SVG icons ── */
@@ -205,14 +208,27 @@ const SORT_LABELS: Record<string, string> = {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest' }: Props) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortMode, setSortMode] = useState('newest');
+  const [sortMode, setSortMode] = useState(defaultSortMode);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+
+  // The settings message normally arrives before the session data, so the
+  // state above is already correct. If it lands late, adopt it — unless the
+  // user has meanwhile picked a sort order by hand.
+  const sortTouched = useRef(false);
+  useEffect(() => {
+    if (!sortTouched.current) setSortMode(defaultSortMode);
+  }, [defaultSortMode]);
+
+  const selectSortMode = useCallback((mode: string) => {
+    sortTouched.current = true;
+    setSortMode(mode);
+  }, []);
 
   // agentId → Subagent for quick lookup
   const subagentById = useMemo(() => {
@@ -493,13 +509,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
 
   const toolLabel = toolFilter.size === 0 ? 'Tool' : toolFilter.size === 1 ? [...toolFilter][0] : `${toolFilter.size} tools`;
   const statusLabel = statusFilter === 'all' ? 'Status' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
-  const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== 'newest';
+  const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== defaultSortMode;
 
   const clearAllFilters = () => {
     setSearchQuery('');
     setToolFilter(new Set());
     setStatusFilter('all');
-    setSortMode('newest');
+    setSortMode(defaultSortMode);
     setOpenDropdown(null);
   };
 
@@ -554,8 +570,8 @@ const StepsTab = ({ steps, subagents, findings, highlightStep }: Props) => {
             label={SORT_LABELS[sortMode]}
             items={sortItems}
             selected={sortMode}
-            onSelect={setSortMode}
-            isActive={sortMode !== 'newest'}
+            onSelect={selectSortMode}
+            isActive={sortMode !== defaultSortMode}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
           />

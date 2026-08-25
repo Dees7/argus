@@ -56,6 +56,13 @@ export class SessionWebviewProviderReact {
     // Set HTML content
     panel.webview.html = this.getWebviewContent(panel.webview);
 
+    // Send user settings before the data, so the UI mounts with the configured
+    // sort order instead of flipping right after the first render
+    panel.webview.postMessage({
+      type: 'config',
+      data: this.getUiConfig(),
+    });
+
     // Send session data to webview
     panel.webview.postMessage({
       type: 'sessionData',
@@ -71,6 +78,10 @@ export class SessionWebviewProviderReact {
         switch (message.type) {
           case 'ready':
             // Webview is ready, send data
+            panel.webview.postMessage({
+              type: 'config',
+              data: this.getUiConfig(),
+            });
             panel.webview.postMessage({
               type: 'sessionData',
               data: sessionData,
@@ -95,6 +106,20 @@ export class SessionWebviewProviderReact {
       this.stopWatching(sessionId);
       this.panels.delete(panelKey);
     });
+  }
+
+  /**
+   * User settings the webview needs at mount time. Read on every send so a
+   * newly opened session always picks up the current settings.json value.
+   */
+  private getUiConfig(): { stepsSortOrder: string } {
+    const config = vscode.workspace.getConfiguration('argus');
+    const sortOrder = config.get<string>('steps.sortOrder', 'newest');
+    const allowed = ['newest', 'oldest', 'cost-desc', 'cost-asc'];
+
+    return {
+      stepsSortOrder: allowed.includes(sortOrder) ? sortOrder : 'newest',
+    };
   }
 
   async openDashboard(): Promise<void> {

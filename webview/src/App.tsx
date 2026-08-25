@@ -23,6 +23,7 @@ function App() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [mapCwd, setMapCwd] = useState<string>('');
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
+  const [stepsSortOrder, setStepsSortOrder] = useState('newest');
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -32,6 +33,10 @@ function App() {
         setLoading(false);
         if (isLive) {
           setLastUpdate(new Date());
+        }
+      } else if (message.type === 'config') {
+        if (message.data?.stepsSortOrder) {
+          setStepsSortOrder(message.data.stepsSortOrder);
         }
       } else if (message.type === 'liveMode') {
         setIsLive(message.active);
@@ -179,6 +184,7 @@ function App() {
             subagents={session.subagents}
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}
+            defaultSortMode={stepsSortOrder}
           />
         )}
         {activeTab === 'analysis' && (

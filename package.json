@@ -229,6 +229,23 @@
             "tr"
           ],
           "description": "Language for analysis findings"
+        },
+        "argus.steps.sortOrder": {
+          "type": "string",
+          "default": "newest",
+          "enum": [
+            "newest",
+            "oldest",
+            "cost-desc",
+            "cost-asc"
+          ],
+          "enumDescriptions": [
+            "Newest step first",
+            "Oldest step first",
+            "Most expensive step first",
+            "Cheapest step first"
+          ],
+          "description": "Default sort order for the Steps tab of a session. Applied when a session is opened; changing the sort inside a session is temporary."
         }
       }
     }
