@@ -18,34 +18,38 @@ const renderFinding = (
   i: number,
   resolveStep: StepResolver,
   onGoToStep: (gi: number) => void
-) => (
-  <div key={i} className={`finding-card ${finding.severity}`}>
-    <div className="finding-header">
-      <span className="finding-severity">{finding.severity}</span>
-      <h3>{finding.title}</h3>
-    </div>
-    <p className="finding-description">{finding.description}</p>
-    {!!finding.wastedCost && finding.wastedCost > 0 && (
-      <div className="finding-cost">Wasted: ${finding.wastedCost.toFixed(4)}</div>
-    )}
-    {finding.affectedSteps && finding.affectedSteps.length > 0 && (
-      <div className="finding-steps">
-        <span>Affected steps:</span>
-        {finding.affectedSteps.map(idx => {
-          const gi = resolveStep(idx);
-          if (gi === undefined) {
-            return <span key={idx} className="step-link disabled">#{idx}</span>;
-          }
-          return (
-            <button key={idx} className="step-link" onClick={() => onGoToStep(gi)}>
-              #{gi}
-            </button>
-          );
-        })}
+) => {
+  const affected = finding.affectedSteps ?? finding.steps ?? [];
+  return (
+    <div key={i} className={`finding-card ${finding.severity}`}>
+      <div className="finding-header">
+        <span className="finding-severity">{finding.severity}</span>
+        {finding.toolName && <span className="finding-tool">{finding.toolName}</span>}
+        <h3>{finding.title}</h3>
       </div>
-    )}
-  </div>
-);
+      <p className="finding-description">{finding.description}</p>
+      {!!finding.wastedCost && finding.wastedCost > 0 && (
+        <div className="finding-cost">Wasted: ${finding.wastedCost.toFixed(4)}</div>
+      )}
+      {affected.length > 0 && (
+        <div className="finding-steps">
+          <span>Affected steps:</span>
+          {affected.map(idx => {
+            const gi = resolveStep(idx);
+            if (gi === undefined) {
+              return <span key={idx} className="step-link disabled">#{idx}</span>;
+            }
+            return (
+              <button key={idx} className="step-link" onClick={() => onGoToStep(gi)}>
+                #{gi}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Props) => {
   // Build resolvers from (agentId | undefined, localIdx) → globalIndex so

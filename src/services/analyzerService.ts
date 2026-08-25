@@ -347,6 +347,7 @@ class RetryLoopRule implements AnalysisRule {
           steps: failSteps,
           wastedCost: totalCost,
           category: 'loop',
+          toolName: step1.toolName,
         });
 
         i += failCount - 1; // Skip processed steps

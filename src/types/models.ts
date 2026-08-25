@@ -215,6 +215,9 @@ export interface Finding {
   details?: any;
   confidence?: number;
   category?: string;
+  // Set by rules that are about one specific tool, so the UI can show it as a
+  // badge instead of relying on the tool name being buried in `description`.
+  toolName?: string;
 }
 
 export interface StepDependency {

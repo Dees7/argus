@@ -148,6 +148,9 @@ export interface Finding {
   title: string;
   description: string;
   wastedCost?: number;
+  toolName?: string;
+  // The analyzer emits `steps`; older/derived shapes use `affectedSteps`.
+  steps?: number[];
   affectedSteps?: number[];
 }
 
