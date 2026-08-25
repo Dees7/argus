@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SessionDetail, flattenSessionSteps } from './types/session';
+import { formatModelLabel } from '../../src/types/modelFamily';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
 import CostTab from './components/CostTab';
@@ -91,13 +92,7 @@ function App() {
     setHighlightStep(stepIndex);
   };
 
-  const formatModel = (model: string): string => {
-    if (!model) return '';
-    if (model.includes('opus')) return 'Opus';
-    if (model.includes('sonnet')) return 'Sonnet';
-    if (model.includes('haiku')) return 'Haiku';
-    return model;
-  };
+  const formatModel = formatModelLabel;
 
   // The extension host owns the clipboard in a webview; navigator.clipboard is
   // only the fallback for running the UI outside VS Code (vite dev server).

@@ -8,6 +8,7 @@ import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderR
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
 import { FilterState, DEFAULT_FILTER_STATE, GroupMode, DatePreset, SessionSummary } from './types/models';
+import { collectModelFilterOptions, modelFamilyKey } from './types/modelFamily';
 import { getClaudeConfigDir } from './utils/claudePaths';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -42,12 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Filtering logic ---
 
-  function normalizeModel(model: string): string {
-    if (model.includes('opus')) return 'opus';
-    if (model.includes('sonnet')) return 'sonnet';
-    if (model.includes('haiku')) return 'haiku';
-    return 'unknown';
-  }
+  const normalizeModel = modelFamilyKey;
 
   /** Last two segments of a path — the shape `SessionSummary.project` uses. */
   function humanProjectName(pathStr: string): string {
@@ -141,7 +137,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   function refreshList() {
     const filtered = applyFilters(allSessions);
-    listViewProvider.updateSessions(filtered, filterState);
+    // Options come from every session, not the filtered ones — otherwise
+    // picking a model would remove every other choice from the dropdown.
+    listViewProvider.updateSessions(
+      filtered,
+      filterState,
+      collectModelFilterOptions(allSessions.map(s => s.model))
+    );
   }
 
   /**

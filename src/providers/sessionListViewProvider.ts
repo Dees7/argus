@@ -1,12 +1,19 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { SessionSummary, FilterState } from '../types/models';
+import {
+  ModelFilterOption,
+  formatModelLabel,
+  modelFamily,
+  modelGroupLabel,
+} from '../types/modelFamily';
 
 export class SessionListViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'argusSessionList';
   private _view?: vscode.WebviewView;
   private _sessions: SessionSummary[] = [];
   private _filterState?: FilterState;
+  private _modelOptions: ModelFilterOption[] = [];
   private _extensionPath: string;
   private _onRefresh?: () => void;
 
@@ -61,23 +68,37 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     // Send cached sessions when the view first opens
     if (this._sessions.length > 0 && this._filterState) {
-      this.updateSessions(this._sessions, this._filterState);
+      this.updateSessions(this._sessions, this._filterState, this._modelOptions);
     } else if (this._onRefresh) {
       this._onRefresh();
     }
   }
 
-  updateSessions(sessions: SessionSummary[], filterState: FilterState): void {
+  updateSessions(
+    sessions: SessionSummary[],
+    filterState: FilterState,
+    modelOptions: ModelFilterOption[]
+  ): void {
     this._sessions = sessions;
     this._filterState = filterState;
+    this._modelOptions = modelOptions;
     this._view?.webview.postMessage({
       type: 'update',
-      sessions: sessions.map(s => ({
-        ...s,
-        timestamp: s.timestamp.toISOString(),
-        lastModified: s.lastModified.toISOString(),
-      })),
+      // Model naming is resolved here rather than in the view script, so the
+      // list and the session panel can never disagree about a model id.
+      sessions: sessions.map(s => {
+        const family = modelFamily(s.model);
+        return {
+          ...s,
+          modelKey: family.key,
+          modelLabel: formatModelLabel(s.model),
+          modelGroupLabel: modelGroupLabel(family),
+          timestamp: s.timestamp.toISOString(),
+          lastModified: s.lastModified.toISOString(),
+        };
+      }),
       filterState,
+      modelOptions,
     });
   }
 
@@ -647,18 +668,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
             <span class="dropdown-item-label">All Models</span>
           </button>
           <div class="dropdown-separator"></div>
-          <button class="dropdown-item" data-value="opus">
-            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Opus</span>
-          </button>
-          <button class="dropdown-item" data-value="sonnet">
-            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Sonnet</span>
-          </button>
-          <button class="dropdown-item" data-value="haiku">
-            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
-            <span class="dropdown-item-label">Haiku</span>
-          </button>
+          <!-- One item per model family found in the transcripts, filled in by
+               renderModelMenu() on every update. -->
         </div>
       </div>
       <span class="divider"></span>
@@ -755,6 +766,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const listEl = document.getElementById('list');
     const LIVE_ICON = '${liveIconUri}';
     const SESSION_ICON = '${sessionIconUri}';
+    const CHECK_ICON = '<svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>';
 
     // Custom dropdown
     const dropdown = document.getElementById('modelDropdown');
@@ -787,25 +799,56 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       if (e.key === 'Escape') closeDropdowns();
     });
 
+    // The items below "All Models" are rebuilt whenever the session list
+    // changes, so the click handler is delegated rather than bound per item.
     modelMenu.addEventListener('click', (e) => {
       e.stopPropagation();
+      const item = e.target.closest('.dropdown-item');
+      if (!item) return;
+
+      const val = item.dataset.value;
+      selectedModel = val;
+      modelLabel.textContent = val === '' ? 'All' : item.dataset.label;
+      trigger.classList.toggle('has-value', val !== '');
+
+      modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+
+      dropdown.classList.remove('open');
+      vscode.postMessage({ type: 'modelFilter', model: val });
     });
 
-    modelMenu.querySelectorAll('.dropdown-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const val = item.dataset.value;
-        selectedModel = val;
-        const labels = { '': 'All', 'opus': 'Opus', 'sonnet': 'Sonnet', 'haiku': 'Haiku' };
-        modelLabel.textContent = labels[val] || 'All';
-        trigger.classList.toggle('has-value', val !== '');
+    /**
+     * Fill the menu with the model families the extension found. A filter for
+     * a model that has since disappeared from the list is dropped, so the
+     * dropdown can never show a selection that matches nothing.
+     */
+    function renderModelMenu(options) {
+      modelMenu.querySelectorAll('.dropdown-item[data-value]:not([data-value=""])')
+        .forEach(i => i.remove());
 
-        modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
-        item.classList.add('selected');
+      for (const opt of options) {
+        const item = document.createElement('button');
+        item.className = 'dropdown-item' + (opt.key === selectedModel ? ' selected' : '');
+        item.dataset.value = opt.key;
+        item.dataset.label = opt.label;
+        item.innerHTML = CHECK_ICON +
+          '<span class="dropdown-item-label"></span>';
+        item.querySelector('.dropdown-item-label').textContent = opt.label;
+        modelMenu.appendChild(item);
+      }
 
-        dropdown.classList.remove('open');
-        vscode.postMessage({ type: 'modelFilter', model: val });
-      });
-    });
+      if (selectedModel && !options.some(o => o.key === selectedModel)) {
+        selectedModel = '';
+        modelLabel.textContent = 'All';
+        trigger.classList.remove('has-value');
+        // Tell the host too, otherwise it keeps filtering by a model the user
+        // can no longer see or clear.
+        vscode.postMessage({ type: 'modelFilter', model: '' });
+      }
+      const allItem = modelMenu.querySelector('.dropdown-item[data-value=""]');
+      allItem.classList.toggle('selected', selectedModel === '');
+    }
 
     // Date dropdown
     const dateDropdown = document.getElementById('dateDropdown');
@@ -1066,6 +1109,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       if (msg.type === 'update') {
         sessions = msg.sessions;
         filterState = msg.filterState;
+        renderModelMenu(msg.modelOptions || []);
         render();
       } else if (msg.type === 'clearSearch') {
         clearTimeout(debounceTimer);
@@ -1119,38 +1163,21 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       return Math.floor(days / 30) + 'mo ago';
     }
 
-    function formatModel(model) {
-      if (model.includes('opus')) return 'Opus';
-      if (model.includes('sonnet')) return 'Sonnet';
-      if (model.includes('haiku')) return 'Haiku';
-      return model || '';
-    }
-
     function shortProject(project) {
       if (!project) return '';
       return project.includes('/') ? project.split('/').pop() : project;
     }
 
-    function normalizeModel(model) {
-      if (model.includes('opus')) return 'opus';
-      if (model.includes('sonnet')) return 'sonnet';
-      if (model.includes('haiku')) return 'haiku';
-      return 'unknown';
-    }
-
+    // Model naming arrives resolved on each session (modelKey / modelLabel /
+    // modelGroupLabel); grouping by model just carries the heading along.
     function getGroupKey(s) {
       if (filterState.groupMode === 'project') return s.project || 'Unknown Project';
-      if (filterState.groupMode === 'model') return normalizeModel(s.model);
+      if (filterState.groupMode === 'model') return s.modelKey;
       return '';
     }
 
-    function getGroupLabel(key) {
-      if (filterState.groupMode === 'model') {
-        if (key === 'opus') return 'Claude Opus';
-        if (key === 'sonnet') return 'Claude Sonnet';
-        if (key === 'haiku') return 'Claude Haiku';
-        return key;
-      }
+    function getGroupLabel(key, s) {
+      if (filterState.groupMode === 'model') return s.modelGroupLabel;
       if (key.includes('/')) return key.split('/').pop();
       return key;
     }
@@ -1167,7 +1194,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     function renderSessionItem(s, grouped) {
       const icon = s.isActive ? LIVE_ICON : SESSION_ICON;
-      const desc = [formatModel(s.model), shortProject(s.project), relativeTime(s.lastModified)]
+      const desc = [s.modelLabel, shortProject(s.project), relativeTime(s.lastModified)]
         .filter(Boolean).join(' · ');
       const cls = grouped ? 'session-item grouped' : 'session-item';
       // Claude Code's own title when it made one, the opening prompt otherwise.
@@ -1212,7 +1239,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
           html += '<div class="group-header" data-group="' + escapeHtml(key) + '">'
             + '<span class="' + chevronCls + '">' + chevronSvg + '</span>'
             + groupIcon()
-            + escapeHtml(getGroupLabel(key))
+            + escapeHtml(getGroupLabel(key, items[0]))
             + '<span class="group-count">' + items.length + '</span>'
             + '</div>';
           if (!isCollapsed) {
