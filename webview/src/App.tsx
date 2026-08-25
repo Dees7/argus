@@ -19,8 +19,6 @@ function App() {
   const [activeTab, setActiveTab] = useState<Tab>('steps');
   const [loading, setLoading] = useState(true);
   const [highlightStep, setHighlightStep] = useState<number | null>(null);
-  const [isLive, setIsLive] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [mapCwd, setMapCwd] = useState<string>('');
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
@@ -33,9 +31,6 @@ function App() {
       if (message.type === 'sessionData') {
         setSession(message.data);
         setLoading(false);
-        if (isLive) {
-          setLastUpdate(new Date());
-        }
       } else if (message.type === 'config') {
         if (message.data?.stepsSortOrder) {
           setStepsSortOrder(message.data.stepsSortOrder);
@@ -43,8 +38,6 @@ function App() {
         if (Array.isArray(message.data?.stepsAutoExpand)) {
           setStepsAutoExpand(message.data.stepsAutoExpand);
         }
-      } else if (message.type === 'liveMode') {
-        setIsLive(message.active);
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
         setMapEntries(Array.isArray(message.entries) ? message.entries : []);
@@ -58,7 +51,7 @@ function App() {
     }
 
     return () => window.removeEventListener('message', handleMessage);
-  }, [isLive]);
+  }, []);
 
   // Hooks must run unconditionally on every render (Rules of Hooks). Compute
   // the flattened timeline before any early returns.
@@ -139,7 +132,6 @@ function App() {
             {flatSteps.length} steps
             {session.subagents.length > 0 && ` · ${session.subagents.length} agents`}
           </span>
-          {isLive && <span className="live-badge"><span className="live-dot"></span>LIVE</span>}
         </div>
         <div className="detail-session-id">
           <span title="Session ID">{session.sessionId}</span>

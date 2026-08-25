@@ -199,13 +199,71 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         await discoveryService.refreshDiscovery();
         searchService.invalidate();
-        allSessions = await discoveryService.getSessionList();
+        allSessions = discoveryService.getSessionSummaries();
         refreshList();
       } finally {
         discoveryPromise = null;
       }
     })();
     return discoveryPromise;
+  }
+
+  /**
+   * Session a watched transcript belongs to. Sub-agent transcripts live in
+   * `<projectDir>/<sessionId>/subagents/*.jsonl` and have no index entry of
+   * their own, so they resolve to the parent session that spawned them.
+   */
+  function sessionIdForPath(fsPath: string): string | null {
+    const parts = path.normalize(fsPath).split(path.sep);
+    const subagentsAt = parts.lastIndexOf('subagents');
+    if (subagentsAt > 0) {
+      return parts[subagentsAt - 1] || null;
+    }
+    const name = parts[parts.length - 1];
+    return name?.endsWith('.jsonl') ? name.slice(0, -'.jsonl'.length) : null;
+  }
+
+  // Claude Code appends one line at a time, so a single turn arrives as a
+  // burst of change events. Collect the sessions they touched and re-read only
+  // those, instead of walking the whole index on every write.
+  const pendingSessionRefreshes = new Set<string>();
+  let sessionRefreshTimer: NodeJS.Timeout | undefined;
+
+  function queueSessionRefresh(sessionId: string) {
+    pendingSessionRefreshes.add(sessionId);
+    // Fixed window rather than a sliding one: a session being written to
+    // continuously would keep pushing a sliding deadline out forever.
+    if (sessionRefreshTimer) {
+      return;
+    }
+    sessionRefreshTimer = setTimeout(() => {
+      sessionRefreshTimer = undefined;
+      void flushSessionRefreshes();
+    }, 400);
+  }
+
+  async function flushSessionRefreshes() {
+    const ids = [...pendingSessionRefreshes];
+    pendingSessionRefreshes.clear();
+    if (ids.length === 0) {
+      return;
+    }
+
+    // An id that isn't indexed means we missed its create event (or it landed
+    // while discovery was still running). Fall back to a full pass, otherwise
+    // that session would stay invisible until the next restart.
+    if (ids.some(id => !discoveryService.hasSession(id))) {
+      await discoveryService.refreshDiscovery();
+      searchService.invalidate();
+    } else {
+      // Deliberately no searchService.invalidate() here: appends happen
+      // constantly and dropping the full-text cache on each one would make
+      // every search re-scan ~200 MB of transcripts.
+      await discoveryService.refreshSessions(ids);
+    }
+
+    allSessions = discoveryService.getSessionSummaries();
+    refreshList();
   }
 
   function syncContextKeys() {
@@ -333,7 +391,7 @@ export function activate(context: vscode.ExtensionContext) {
           try {
             await discoveryService.refreshDiscovery();
             searchService.invalidate();
-            allSessions = await discoveryService.getSessionList();
+            allSessions = discoveryService.getSessionSummaries();
             refreshList();
             await runContentSearch();
             vscode.window.showInformationMessage(`Sessions refreshed (${allSessions.length} found)`);
@@ -451,22 +509,45 @@ export function activate(context: vscode.ExtensionContext) {
 
   watcher.onDidCreate(async () => {
     await discoveryService.refreshDiscovery();
-    allSessions = await discoveryService.getSessionList(true);
+    searchService.invalidate();
+    allSessions = discoveryService.getSessionSummaries();
     refreshList();
   });
 
-  watcher.onDidChange(async () => {
-    allSessions = await discoveryService.getSessionList();
-    refreshList();
+  watcher.onDidChange(uri => {
+    const sessionId = sessionIdForPath(uri.fsPath);
+    if (sessionId) {
+      queueSessionRefresh(sessionId);
+    }
   });
 
   watcher.onDidDelete(async () => {
     await discoveryService.refreshDiscovery();
-    allSessions = await discoveryService.getSessionList(true);
+    searchService.invalidate();
+    allSessions = discoveryService.getSessionSummaries();
     refreshList();
   });
 
   context.subscriptions.push(watcher);
+
+  // `isActive` is a function of wall-clock time, so a session that stops being
+  // written produces no event to clear its live dot. Re-project the index on a
+  // timer, but only while something is actually marked live — otherwise this
+  // is a no-op comparison and costs nothing.
+  const liveTicker = setInterval(() => {
+    if (allSessions.some(s => s.isActive)) {
+      allSessions = discoveryService.getSessionSummaries();
+      refreshList();
+    }
+  }, 30 * 1000);
+  context.subscriptions.push({
+    dispose: () => {
+      clearInterval(liveTicker);
+      if (sessionRefreshTimer) {
+        clearTimeout(sessionRefreshTimer);
+      }
+    },
+  });
 
   // Status bar item
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

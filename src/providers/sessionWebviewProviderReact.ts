@@ -98,7 +98,6 @@ export class SessionWebviewProviderReact {
               type: 'sessionData',
               data: sessionData,
             });
-            panel.webview.postMessage({ type: 'liveMode', active: true });
             this.sendDirectoryTree(panel, sessionData.project);
             break;
           case 'copyToClipboard':
@@ -289,9 +288,6 @@ export class SessionWebviewProviderReact {
 
       // The dir may already exist (re-opening a finished session).
       ensureSubagentWatcher();
-
-      // Notify webview that live mode is active
-      panel.webview.postMessage({ type: 'liveMode', active: true });
     } catch (err) {
       console.error('Failed to start file watcher:', err);
     }

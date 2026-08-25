@@ -36,6 +36,14 @@ interface SessionFileInfo {
 }
 
 export class DiscoveryService {
+  /** How recently a transcript must have been written to count as live. */
+  private static readonly ACTIVE_WINDOW_MS = 2 * 60 * 1000;
+  /**
+   * Past this age, a session is old enough that no sub-agent of it can still
+   * be running, so its sub-agent transcripts aren't worth stat-ing.
+   */
+  private static readonly SUBAGENT_LOOKBACK_MS = 6 * 60 * 60 * 1000;
+
   private sessionIndex: Map<string, DiscoveredSession> = new Map();
   private claudeDirs: string[] = [];
   private lastDiscovery: Date = new Date(0);
@@ -142,13 +150,22 @@ export class DiscoveryService {
       await this.refreshChangedSessions();
     }
 
+    return this.getSessionSummaries();
+  }
+
+  /**
+   * Project the current index into summaries, without touching the filesystem
+   * beyond the liveness check. Callers that just refreshed the index use this
+   * instead of `getSessionList()` to avoid a second pass over every session.
+   *
+   * `isActive` depends on wall-clock time, so it is recomputed on every call
+   * rather than cached alongside the rest of the metadata.
+   */
+  getSessionSummaries(): SessionSummary[] {
     const now = Date.now();
     const summaries: SessionSummary[] = [];
 
     for (const ds of this.sessionIndex.values()) {
-      // A session is "active" if its file was modified within the last 2 minutes
-      const isActive = now - ds.lastModified.getTime() < 2 * 60 * 1000;
-
       summaries.push({
         sessionId: ds.sessionId,
         prompt: ds.prompt,
@@ -158,7 +175,7 @@ export class DiscoveryService {
         model: ds.model,
         timestamp: ds.timestamp,
         lastModified: ds.lastModified,
-        isActive,
+        isActive: this.isSessionActive(ds, now),
       });
     }
 
@@ -166,6 +183,77 @@ export class DiscoveryService {
     summaries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
     return summaries;
+  }
+
+  /** True when the session is still in the index. */
+  hasSession(sessionId: string): boolean {
+    return this.sessionIndex.has(sessionId);
+  }
+
+  /**
+   * Re-read metadata for the named sessions only. Used by the file watcher,
+   * which knows exactly which transcript changed and has no reason to walk the
+   * whole index. Ids that aren't indexed are ignored — the caller is expected
+   * to fall back to a full discovery for those.
+   */
+  async refreshSessions(sessionIds: string[]): Promise<void> {
+    const known = sessionIds
+      .map(id => this.sessionIndex.get(id))
+      .filter((ds): ds is DiscoveredSession => ds !== undefined);
+
+    if (known.length === 0) {
+      return;
+    }
+
+    const historyMap = await this.parserService.readHistoryMap();
+
+    for (const ds of known) {
+      const updated = await this.processSessionFile(
+        {
+          sessionId: ds.sessionId,
+          filePath: ds.filePath,
+          projectDir: ds.projectDir,
+          subagentFiles: this.listSubagentFiles(ds.projectDir, ds.sessionId),
+        },
+        historyMap
+      );
+      if (updated) {
+        this.sessionIndex.set(updated.sessionId, updated);
+      }
+    }
+  }
+
+  /**
+   * A session counts as live while something is still being written to it.
+   *
+   * The parent transcript alone is not enough: while a `Task` runs, nothing is
+   * appended to it for as long as the sub-agent works, so a busy session would
+   * look dead. The sub-agent transcript is the only sign of life in that
+   * window, hence the second check — kept behind a coarse age cutoff so the
+   * common case (hundreds of long-finished sessions) costs one `stat` each.
+   */
+  private isSessionActive(ds: DiscoveredSession, now: number): boolean {
+    const age = now - ds.lastModified.getTime();
+    if (age < DiscoveryService.ACTIVE_WINDOW_MS) {
+      return true;
+    }
+    if (age > DiscoveryService.SUBAGENT_LOOKBACK_MS) {
+      return false;
+    }
+    return now - this.latestSubagentMtime(ds) < DiscoveryService.ACTIVE_WINDOW_MS;
+  }
+
+  /** Newest mtime among the session's sub-agent transcripts, 0 when it has none. */
+  private latestSubagentMtime(ds: DiscoveredSession): number {
+    let latest = 0;
+    for (const file of this.listSubagentFiles(ds.projectDir, ds.sessionId)) {
+      try {
+        latest = Math.max(latest, fs.statSync(file).mtimeMs);
+      } catch {
+        // Sub-agent file vanished mid-scan; ignore it.
+      }
+    }
+    return latest;
   }
 
   /**
@@ -220,39 +308,20 @@ export class DiscoveryService {
    * next full discovery.
    */
   private async refreshChangedSessions(): Promise<void> {
-    const stale: DiscoveredSession[] = [];
+    const stale: string[] = [];
 
     for (const ds of this.sessionIndex.values()) {
       try {
         const stat = fs.statSync(ds.filePath);
         if (stat.mtime.getTime() !== ds.lastModified.getTime()) {
-          stale.push(ds);
+          stale.push(ds.sessionId);
         }
       } catch {
         // File vanished; leave the cached entry for the next full discovery.
       }
     }
 
-    if (stale.length === 0) {
-      return;
-    }
-
-    const historyMap = await this.parserService.readHistoryMap();
-
-    for (const ds of stale) {
-      const updated = await this.processSessionFile(
-        {
-          sessionId: ds.sessionId,
-          filePath: ds.filePath,
-          projectDir: ds.projectDir,
-          subagentFiles: this.listSubagentFiles(ds.projectDir, ds.sessionId),
-        },
-        historyMap
-      );
-      if (updated) {
-        this.sessionIndex.set(updated.sessionId, updated);
-      }
-    }
+    await this.refreshSessions(stale);
   }
 
   /**
