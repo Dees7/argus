@@ -1,3 +1,5 @@
+import type { CostUsage } from './pricing';
+
 // Filter & grouping types
 
 export type GroupMode = 'none' | 'project' | 'model';
@@ -105,17 +107,19 @@ export interface Step {
   toolSuccess?: boolean;
   toolUseId?: string;
   usage?: Usage;
+  // Cost of the API response this step came from, charged once per message:
+  // the first step of a message carries it, its siblings carry 0. Summing
+  // `cost` over all steps therefore yields the session total without
+  // double-counting.
   cost: number;
+  // Set when `cost` was derived from fallback pricing (unrecognised model id).
+  costIsEstimate?: boolean;
+  model?: string;
   agentId?: string;
   globalIndex?: number;
 }
 
-export interface Usage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens: number;
-  cache_creation_input_tokens: number;
-}
+export interface Usage extends CostUsage {}
 
 export interface SubagentInfo {
   agentId: string;
@@ -257,54 +261,15 @@ export interface StepCost {
   cost: number;
 }
 
-export interface ModelPricing {
-  inputPerMillion: number;
-  outputPerMillion: number;
-  cacheReadRatio: number;
-  cacheCreateRatio: number;
-}
-
-export const MODEL_PRICES: Record<string, ModelPricing> = {
-  'claude-opus-4-6': {
-    inputPerMillion: 15.0,
-    outputPerMillion: 75.0,
-    cacheReadRatio: 0.10,
-    cacheCreateRatio: 0.25,
-  },
-  'claude-sonnet-4-5-20250929': {
-    inputPerMillion: 3.0,
-    outputPerMillion: 15.0,
-    cacheReadRatio: 0.10,
-    cacheCreateRatio: 0.25,
-  },
-  'claude-sonnet-4-6': {
-    inputPerMillion: 3.0,
-    outputPerMillion: 15.0,
-    cacheReadRatio: 0.10,
-    cacheCreateRatio: 0.25,
-  },
-  'claude-haiku-4-5-20251001': {
-    inputPerMillion: 0.80,
-    outputPerMillion: 4.0,
-    cacheReadRatio: 0.10,
-    cacheCreateRatio: 0.25,
-  },
-};
-
-export function getModelPricing(model: string): ModelPricing {
-  return MODEL_PRICES[model] || MODEL_PRICES['claude-sonnet-4-5-20250929'];
-}
-
-export function calculateCost(usage: Usage | undefined, model: string): number {
-  if (!usage) {
-    return 0;
-  }
-
-  const pricing = getModelPricing(model);
-  const inputCost = (usage.input_tokens * pricing.inputPerMillion) / 1_000_000;
-  const outputCost = (usage.output_tokens * pricing.outputPerMillion) / 1_000_000;
-  const cacheReadCost = (usage.cache_read_input_tokens * pricing.inputPerMillion * pricing.cacheReadRatio) / 1_000_000;
-  const cacheCreateCost = (usage.cache_creation_input_tokens * pricing.inputPerMillion * pricing.cacheCreateRatio) / 1_000_000;
-
-  return inputCost + outputCost + cacheReadCost + cacheCreateCost;
-}
+// Pricing lives in its own dependency-free module so the webview can import
+// the same implementation instead of keeping a second copy.
+export {
+  MODEL_PRICES,
+  CACHE_READ_RATIO,
+  CACHE_WRITE_5M_RATIO,
+  CACHE_WRITE_1H_RATIO,
+  getModelPricing,
+  calculateCost,
+  calculateCostBreakdown,
+} from './pricing';
+export type { ModelPricing, ResolvedPricing, CostBreakdown } from './pricing';

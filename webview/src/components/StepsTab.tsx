@@ -805,7 +805,22 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                       {formatDuration(stepDurations.get(k)!)}
                     </span>
                   )}
-                  <span className="step-cost">${step.cost.toFixed(4)}</span>
+                  {/* Only the step a response is charged to carries a cost;
+                      its siblings and user/compact steps carry 0, and a literal
+                      $0.0000 there reads as "this was free" rather than
+                      "billed elsewhere". */}
+                  {step.cost > 0 && (
+                    <span
+                      className="step-cost"
+                      title={
+                        step.costIsEstimate
+                          ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
+                          : undefined
+                      }
+                    >
+                      {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
+                    </span>
+                  )}
                   <span className="step-expand">▶</span>
                 </div>
               </button>

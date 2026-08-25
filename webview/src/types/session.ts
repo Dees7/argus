@@ -18,6 +18,8 @@ export interface SessionDetail {
 export interface Step {
   index: number;
   type: string;
+  // Identifies the API response a step came from; several steps share one.
+  messageId?: string;
   toolName?: string;
   toolInput?: any;
   toolResult?: string;
@@ -25,7 +27,12 @@ export interface Step {
   toolUseId?: string;
   content?: string;
   timestamp?: string;
+  // Charged once per API response: the first step of a message carries the
+  // whole cost, its siblings carry 0. Sum over steps = session total.
   cost: number;
+  // Cost came from fallback pricing because the model id was not recognised.
+  costIsEstimate?: boolean;
+  model?: string;
   usage?: TokenUsage;
   agentId?: string;
   globalIndex?: number;
@@ -36,6 +43,11 @@ export interface TokenUsage {
   output_tokens: number;
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+  speed?: string;
 }
 
 export interface Subagent {

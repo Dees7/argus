@@ -1,4 +1,5 @@
 import { Step, AnalysisResult } from '../types/session';
+import { calculateCostBreakdown } from '../../../src/types/pricing';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -63,7 +64,10 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
   const wastedCost = calculatedWastedCost;
   const efficiency = analysis?.efficiency ?? (totalCost > 0 ? ((totalCost - wastedCost) / totalCost) * 100 : 100);
 
-  // Cost by step type
+  // Cost by step type. `step.cost` is already priced per model by the parser
+  // and charged once per API response, so it is summed as-is — recomputing it
+  // here from `usage` would both re-guess the model and double-count the
+  // siblings of a multi-block message.
   const costByType: Record<string, { count: number; cost: number; steps: number[] }> = {};
   steps.forEach(step => {
     const key = step.toolName || step.type;
@@ -71,34 +75,31 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
       costByType[key] = { count: 0, cost: 0, steps: [] };
     }
     costByType[key].count++;
-    // Calculate cost from usage if available, fallback to step.cost
-    if (step.usage) {
-      const pricing = { in: 3, out: 15 }; // Sonnet default
-      const stepCost =
-        (step.usage.input_tokens * pricing.in) / 1_000_000 +
-        (step.usage.output_tokens * pricing.out) / 1_000_000 +
-        (step.usage.cache_read_input_tokens * pricing.in * 0.1) / 1_000_000 +
-        (step.usage.cache_creation_input_tokens * pricing.in * 0.25) / 1_000_000;
-      costByType[key].cost += stepCost;
-    } else {
-      costByType[key].cost += step.cost || 0;
-    }
+    costByType[key].cost += step.cost || 0;
     costByType[key].steps.push(step.index);
   });
 
   const sortedTypes = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
   const maxCost = sortedTypes[0]?.[1].cost || 1;
 
-  // Token cost breakdown
+  // Token cost breakdown. Usage repeats across every step of one response, so
+  // each message is counted once — the same rule the parser applies to cost.
   let inputCost = 0, outputCost = 0, cacheReadCost = 0, cacheCreateCost = 0;
+  const countedMessages = new Set<string>();
   steps.forEach(step => {
     if (!step.usage) return;
-    const pricing = { in: 3, out: 15 }; // Sonnet default
-    inputCost += (step.usage.input_tokens * pricing.in) / 1_000_000;
-    outputCost += (step.usage.output_tokens * pricing.out) / 1_000_000;
-    cacheReadCost += (step.usage.cache_read_input_tokens * pricing.in * 0.1) / 1_000_000;
-    cacheCreateCost += (step.usage.cache_creation_input_tokens * pricing.in * 0.25) / 1_000_000;
+    const key = step.messageId || `step-${step.index}`;
+    if (countedMessages.has(key)) return;
+    countedMessages.add(key);
+
+    const b = calculateCostBreakdown(step.usage, step.model ?? '');
+    inputCost += b.input;
+    outputCost += b.output;
+    cacheReadCost += b.cacheRead;
+    cacheCreateCost += b.cacheWrite;
   });
+
+  const hasEstimatedCosts = steps.some(s => s.costIsEstimate);
 
   // Pie chart data - Cost by Type
   const pieData = {
@@ -196,7 +197,15 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
       <div className="cost-summary">
         <div className="cost-card total">
           <div className="cost-label">Total Cost</div>
-          <div className="cost-value">${totalCost.toFixed(4)}</div>
+          <div className="cost-value">
+            {hasEstimatedCosts && <span className="cost-approx">≈</span>}
+            ${totalCost.toFixed(4)}
+          </div>
+          {hasEstimatedCosts && (
+            <div className="cost-note" title="Some steps ran on a model with no exact price in the table; those are priced at their model family's rate.">
+              estimated — unrecognised model
+            </div>
+          )}
         </div>
         <div className="cost-card wasted">
           <div className="cost-label">Wasted Cost</div>

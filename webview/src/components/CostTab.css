@@ -58,6 +58,18 @@
   color: var(--text-bright);
 }
 
+.cost-approx {
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+
+.cost-note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: help;
+}
+
 .cost-breakdown h3 {
   font-size: 16px;
   font-weight: 600;

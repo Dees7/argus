@@ -2,7 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { RawEvent } from '../types/parser';
-import { HistoryEntry, SessionDetail, Step, SubagentInfo } from '../types/models';
+import {
+  HistoryEntry,
+  SessionDetail,
+  Step,
+  SubagentInfo,
+  calculateCost,
+  getModelPricing,
+} from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 
 /**
@@ -213,8 +220,23 @@ export class ParserService {
     // Track tool calls and their results
     const toolCallMap = new Map<string, Partial<Step>>();
 
+    // One API response is written as several JSONL events — one per content
+    // block — each repeating the same `message.id` and the same `usage`.
+    // Charging every event would multiply the bill by the block count, so a
+    // message is priced the first time its id is seen and its siblings cost 0.
+    const chargedMessages = new Set<string>();
+    // Cost priced but not yet attached to a step, keyed by message id.
+    const unbilled = new Map<string, number>();
+    // Messages that render to nothing. With thinking `display: "omitted"` —
+    // the default on current models — a reasoning turn is recorded as a
+    // `thinking` block with empty text, so a message can consist solely of
+    // blocks that produce no step while still having been billed. Those get a
+    // placeholder step rather than dropping the charge off the timeline.
+    const blankMessages = this.findBlankMessages(events);
+
     for (const event of events) {
-      // Extract model
+      // Session-level model, for display only. Costs use each message's own
+      // model — a session can switch models mid-way.
       if (!model && event.message?.model && event.message.model !== '<synthetic>') {
         model = event.message.model;
       }
@@ -273,11 +295,51 @@ export class ParserService {
       // Process assistant messages
       if (event.type === 'assistant' && event.message) {
         const usage = event.message.usage;
-        const cost = usage ? this.calculateCost(usage, model) : 0;
-        totalCost += cost;
+        const eventModel =
+          event.message.model && event.message.model !== '<synthetic>'
+            ? event.message.model
+            : model;
+
+        // Charge this message once, on whichever of its blocks lands first.
+        const messageId = event.message.id ?? '';
+        const priced = messageId !== '' && chargedMessages.has(messageId);
+        if (!priced && usage) {
+          const c = calculateCost(usage, eventModel);
+          totalCost += c;
+          unbilled.set(messageId, c);
+        }
+        if (messageId !== '') {
+          chargedMessages.add(messageId);
+        }
+        const costIsEstimate =
+          !!usage && getModelPricing(eventModel).isFallback;
+
+        // Drains on first read, so the charge lands on the first step the
+        // message actually produces — blocks that yield no step (empty text,
+        // unrecognised types) must not swallow it.
+        const cost = () => {
+          const c = unbilled.get(messageId) ?? 0;
+          unbilled.delete(messageId);
+          return c;
+        };
 
         // Ensure content is an array
         const content = Array.isArray(event.message.content) ? event.message.content : [];
+
+        if (blankMessages.has(messageId) && unbilled.has(messageId)) {
+          steps.push({
+            index: steps.length,
+            type: 'thinking',
+            timestamp: new Date(event.timestamp),
+            uuid: event.uuid,
+            messageId,
+            content: '(reasoning not recorded — thinking display is omitted)',
+            usage,
+            cost: cost(),
+            costIsEstimate,
+            model: eventModel,
+          });
+        }
 
         for (const block of content) {
           if (block.type === 'thinking' && block.thinking) {
@@ -289,7 +351,9 @@ export class ParserService {
               messageId: event.message.id,
               content: block.thinking,
               usage,
-              cost,
+              cost: cost(),
+              costIsEstimate,
+              model: eventModel,
             });
           } else if (block.type === 'text' && block.text) {
             steps.push({
@@ -300,7 +364,9 @@ export class ParserService {
               messageId: event.message.id,
               content: block.text,
               usage,
-              cost: 0,
+              cost: cost(),
+              costIsEstimate,
+              model: eventModel,
             });
           } else if (block.type === 'tool_use' && block.name) {
             const toolStep: Partial<Step> = {
@@ -316,7 +382,10 @@ export class ParserService {
               // as `toolUseId`, which is the only way to locate the Task step
               // that spawned a nested agent.
               toolUseId: block.id,
-              cost: 0,
+              usage,
+              cost: cost(),
+              costIsEstimate,
+              model: eventModel,
             };
 
             // Key by assistant event UUID — sourceToolAssistantUUID in
@@ -628,6 +697,43 @@ export class ParserService {
     return '';
   }
 
+  /**
+   * Ids of assistant messages none of whose content blocks becomes a step.
+   * Requires a pass of its own because a message is spread over several
+   * events, so whether any of them renders is only knowable up front.
+   */
+  private findBlankMessages(events: RawEvent[]): Set<string> {
+    const seen = new Set<string>();
+    const renders = new Set<string>();
+
+    for (const event of events) {
+      if (event.type !== 'assistant' || !event.message) {
+        continue;
+      }
+      const id = event.message.id ?? '';
+      if (id === '') {
+        continue;
+      }
+      seen.add(id);
+
+      const content = Array.isArray(event.message.content) ? event.message.content : [];
+      const rendersHere = content.some(
+        (block: any) =>
+          (block?.type === 'thinking' && block.thinking) ||
+          (block?.type === 'text' && block.text) ||
+          (block?.type === 'tool_use' && block.name)
+      );
+      if (rendersHere) {
+        renders.add(id);
+      }
+    }
+
+    for (const id of renders) {
+      seen.delete(id);
+    }
+    return seen;
+  }
+
   private truncatePrompt(text: string, maxLen: number): string {
     if (text.length <= maxLen) {
       return text;
@@ -635,21 +741,4 @@ export class ParserService {
     return text.substring(0, maxLen) + '...';
   }
 
-  private calculateCost(usage: any, model: string): number {
-    // Import from models.ts would be better, but for simplicity:
-    const pricing: any = {
-      'claude-opus-4-6': { in: 15, out: 75 },
-      'claude-sonnet-4-5-20250929': { in: 3, out: 15 },
-      'claude-sonnet-4-6': { in: 3, out: 15 },
-      'claude-haiku-4-5-20251001': { in: 0.8, out: 4 },
-    };
-
-    const p = pricing[model] || pricing['claude-sonnet-4-5-20250929'];
-    const inputCost = (usage.input_tokens * p.in) / 1_000_000;
-    const outputCost = (usage.output_tokens * p.out) / 1_000_000;
-    const cacheReadCost = (usage.cache_read_input_tokens * p.in * 0.1) / 1_000_000;
-    const cacheCreateCost = (usage.cache_creation_input_tokens * p.in * 0.25) / 1_000_000;
-
-    return inputCost + outputCost + cacheReadCost + cacheCreateCost;
-  }
 }
