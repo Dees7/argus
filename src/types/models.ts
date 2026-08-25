@@ -83,6 +83,10 @@ export interface Step {
   cost: number;
   agentId?: string;
   globalIndex?: number;
+  // First step produced after a `isCompactSummary` event, i.e. the first step
+  // running on the compacted context. The compaction itself is a user event
+  // and yields no step of its own, so the boundary is anchored here.
+  postCompact?: boolean;
 }
 
 export interface Usage {

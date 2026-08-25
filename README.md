@@ -192,6 +192,23 @@ Argus exposes the following VS Code settings:
 | `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
 | `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
 | `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
+| `argus.analysis.realCompactsOnly` | `false` | Report a compaction only where the transcript marks one, instead of inferring it from a token drop |
+
+### Compaction detection
+
+By default the `Context Compaction` finding is inferred from a drop in
+`input + cache_creation` tokens between consecutive steps. That signal is not
+specific: an ordinary prompt-cache rotation — a step whose prompt had to be
+rewritten into the cache, followed by one that reads it back — produces the same
+near-100% drop with no context loss at all, so sessions that were never
+compacted still collect findings.
+
+`argus.analysis.realCompactsOnly` switches the rule to the `isCompactSummary`
+marker Claude Code writes at a real compaction boundary, and measures the drop
+on the full prompt (`input + cache_creation + cache_read`), which is what a
+compaction actually shrinks. Only the Analysis tab changes — re-read detection,
+wasted cost and every other finding behave the same. Leave it off for older
+transcripts written before the marker existed.
 
 ### Auto-expanding steps
 

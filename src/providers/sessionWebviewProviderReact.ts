@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ParserService } from '../services/parserService';
-import { AnalyzerService } from '../services/analyzerService';
+import { AnalysisOptions, AnalyzerService } from '../services/analyzerService';
 import { DiscoveryService } from '../services/discoveryService';
 import { SessionDetail } from '../types/models';
 
@@ -142,6 +142,18 @@ export class SessionWebviewProviderReact {
       stepsAutoExpand: Array.isArray(autoExpand)
         ? autoExpand.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
         : [],
+    };
+  }
+
+  /**
+   * Analysis knobs from settings.json. Read per load so a changed setting
+   * applies to the next session opened, without a reload.
+   */
+  private getAnalysisOptions(): AnalysisOptions {
+    return {
+      realCompactsOnly: vscode.workspace
+        .getConfiguration('argus')
+        .get<boolean>('analysis.realCompactsOnly', false),
     };
   }
 
@@ -370,7 +382,8 @@ export class SessionWebviewProviderReact {
 
       // Run analysis
       console.log('🔬 Running analysis...');
-      session.analysis = this.analyzerService.analyze(session);
+      const analysisOptions = this.getAnalysisOptions();
+      session.analysis = this.analyzerService.analyze(session, analysisOptions);
       console.log('✅ Analysis complete:', session.analysis.findings.length, 'findings');
 
       // Analyze subagents
@@ -390,7 +403,7 @@ export class SessionWebviewProviderReact {
           filesWritten: [],
           toolsUsed: {},
         };
-        subagent.analysis = this.analyzerService.analyze(subSession);
+        subagent.analysis = this.analyzerService.analyze(subSession, analysisOptions);
       }
 
       console.log('✅ Session loaded successfully');

@@ -24,6 +24,11 @@ export interface RawEvent {
   toolUseResult?: any;
   sourceToolAssistantUUID?: string;
 
+  // Set on the synthetic user event Claude Code writes when it compacts the
+  // conversation: `message.content` is the hand-off summary that replaces the
+  // dropped history. The only unambiguous compaction marker in a transcript.
+  isCompactSummary?: boolean;
+
   // Progress-specific
   data?: any;
 

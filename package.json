@@ -281,6 +281,11 @@
               "*"
             ]
           ]
+        },
+        "argus.analysis.realCompactsOnly": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Report a `Context Compaction` finding in the Analysis tab only where the transcript actually marks one (`isCompactSummary`). By default the compaction is inferred from a drop in `input + cache_creation` tokens, which also fires on ordinary prompt-cache rotation — a step whose prompt was rewritten into the cache looks identical to a context reset. Enable for accuracy; leave off for transcripts written before Claude Code recorded the marker."
         }
       }
     }

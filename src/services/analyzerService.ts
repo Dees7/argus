@@ -9,9 +9,20 @@ import {
   SessionDetail,
 } from '../types/models';
 
+export interface AnalysisOptions {
+  /**
+   * Report a compaction only where the transcript actually marks one
+   * (`isCompactSummary`), instead of inferring it from a token drop. The
+   * heuristic also fires on ordinary prompt-cache rotation — a step whose
+   * prompt had to be rewritten into the cache looks exactly like a context
+   * reset when measured as `input + cache_creation`.
+   */
+  realCompactsOnly?: boolean;
+}
+
 export interface AnalysisRule {
   name: string;
-  analyze(steps: Step[]): Finding[];
+  analyze(steps: Step[], options?: AnalysisOptions): Finding[];
 }
 
 export class AnalyzerService {
@@ -32,7 +43,11 @@ export class AnalyzerService {
   /**
    * Analyze a session and return findings
    */
-  analyze(session: SessionDetail, lang: string = 'en'): AnalysisResult {
+  analyze(
+    session: SessionDetail,
+    options: AnalysisOptions = {},
+    lang: string = 'en'
+  ): AnalysisResult {
     const result: AnalysisResult = {
       findings: [],
       totalCost: session.totalCost,
@@ -43,7 +58,7 @@ export class AnalyzerService {
 
     // Run each rule
     for (const rule of this.rules) {
-      const findings = rule.analyze(session.steps);
+      const findings = rule.analyze(session.steps, options);
       result.findings.push(...findings);
     }
 
@@ -456,53 +471,19 @@ class ContextPressureRule implements AnalysisRule {
   }
 }
 
+interface Compaction {
+  stepIndex: number;
+  dropTokens: number;
+  dropPct: number;
+}
+
 class CompactionDetectedRule implements AnalysisRule {
   name = 'compaction_detected';
 
-  analyze(steps: Step[]): Finding[] {
-    const DROP_RATIO = 0.30;
-    const MIN_ABS_DROP = 20000;
-
-    interface Compaction {
-      stepIndex: number;
-      dropTokens: number;
-      dropPct: number;
-    }
-
-    const compactions: Compaction[] = [];
-    const filesReadBefore = new Map<string, boolean>();
-    let prevInput = -1;
-
-    for (const step of steps) {
-      // Track files read
-      if (step.type === 'tool_call' && step.toolName === 'Read') {
-        const filePath = step.toolInput?.file_path;
-        if (filePath) {
-          filesReadBefore.set(filePath, true);
-        }
-      }
-
-      if (!step.usage) {
-        continue;
-      }
-
-      const currInput = step.usage.input_tokens + step.usage.cache_creation_input_tokens;
-
-      if (prevInput > 0 && currInput > 0) {
-        const drop = prevInput - currInput;
-        const pct = drop / prevInput;
-
-        if (pct > DROP_RATIO && drop > MIN_ABS_DROP) {
-          compactions.push({
-            stepIndex: step.index,
-            dropTokens: drop,
-            dropPct: pct,
-          });
-        }
-      }
-
-      prevInput = currInput;
-    }
+  analyze(steps: Step[], options?: AnalysisOptions): Finding[] {
+    const compactions = options?.realCompactsOnly
+      ? this.fromCompactMarkers(steps)
+      : this.fromTokenDrops(steps);
 
     if (compactions.length === 0) {
       return [];
@@ -543,6 +524,11 @@ class CompactionDetectedRule implements AnalysisRule {
 
       const allSteps = [compaction.stepIndex, ...rereadSteps];
 
+      const dropText =
+        compaction.dropTokens > 0
+          ? `Detected ${compaction.dropTokens.toLocaleString()} token drop (${(compaction.dropPct * 100).toFixed(0)}%). `
+          : '';
+
       findings.push({
         rule: 'compaction_detected',
         severity: 'info',
@@ -550,14 +536,90 @@ class CompactionDetectedRule implements AnalysisRule {
         // while the UI renders globalIndex (which differs once subagent steps
         // are interleaved). The affected-step link below carries the right one.
         title: 'Context Compaction',
-        description: `Detected ${compaction.dropTokens.toLocaleString()} token drop (${(compaction.dropPct * 100).toFixed(0)}%). ${rereadSteps.length} files re-read after compaction.`,
+        description: `${dropText}${rereadSteps.length} files re-read after compaction.`,
         steps: allSteps,
         wastedCost: rereadCost,
-        confidence: 0.8,
+        // A transcript marker is fact, not inference.
+        confidence: options?.realCompactsOnly ? 1.0 : 0.8,
         category: 'context',
       });
     }
 
     return findings;
+  }
+
+  /**
+   * Compaction boundaries as recorded by Claude Code itself. The drop is
+   * measured on the full prompt (`input + cache_creation + cache_read`),
+   * because that is the number a compaction actually shrinks — the
+   * `input + cache_creation` sum used by the heuristic below typically *grows*
+   * across a real compaction, as the summary has to be written to cache.
+   */
+  private fromCompactMarkers(steps: Step[]): Compaction[] {
+    const compactions: Compaction[] = [];
+    let prevFull = -1;
+
+    for (const step of steps) {
+      const full = step.usage
+        ? step.usage.input_tokens +
+          step.usage.cache_creation_input_tokens +
+          step.usage.cache_read_input_tokens
+        : -1;
+
+      if (step.postCompact) {
+        // The marked step may be a tool call, which carries no usage; fall
+        // back to a zero drop rather than skipping a boundary we know exists.
+        const drop = prevFull > 0 && full > 0 ? prevFull - full : 0;
+        compactions.push({
+          stepIndex: step.index,
+          dropTokens: drop,
+          dropPct: drop > 0 ? drop / prevFull : 0,
+        });
+      }
+
+      if (full > 0) {
+        prevFull = full;
+      }
+    }
+
+    return compactions;
+  }
+
+  /**
+   * Heuristic fallback: a large drop in `input + cache_creation`. Catches
+   * compactions in transcripts written before the marker existed, at the cost
+   * of also firing on prompt-cache rotation.
+   */
+  private fromTokenDrops(steps: Step[]): Compaction[] {
+    const DROP_RATIO = 0.30;
+    const MIN_ABS_DROP = 20000;
+
+    const compactions: Compaction[] = [];
+    let prevInput = -1;
+
+    for (const step of steps) {
+      if (!step.usage) {
+        continue;
+      }
+
+      const currInput = step.usage.input_tokens + step.usage.cache_creation_input_tokens;
+
+      if (prevInput > 0 && currInput > 0) {
+        const drop = prevInput - currInput;
+        const pct = drop / prevInput;
+
+        if (pct > DROP_RATIO && drop > MIN_ABS_DROP) {
+          compactions.push({
+            stepIndex: step.index,
+            dropTokens: drop,
+            dropPct: pct,
+          });
+        }
+      }
+
+      prevInput = currInput;
+    }
+
+    return compactions;
   }
 }

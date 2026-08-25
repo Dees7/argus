@@ -188,6 +188,10 @@ export class ParserService {
     // Track tool calls and their results
     const toolCallMap = new Map<string, Partial<Step>>();
 
+    // Set by an `isCompactSummary` user event, consumed by the next step —
+    // see Step.postCompact.
+    let pendingCompactBoundary = false;
+
     for (const event of events) {
       // Extract model
       if (!model && event.message?.model && event.message.model !== '<synthetic>') {
@@ -205,11 +209,20 @@ export class ParserService {
         }
       }
 
+      // Context compaction. Claude Code writes it as a user event holding the
+      // hand-off summary — no step of its own, so remember it and tag the next
+      // step, which is the first one running on the compacted context.
+      if (event.type === 'user' && event.isCompactSummary === true) {
+        pendingCompactBoundary = true;
+      }
+
       // Process assistant messages
       if (event.type === 'assistant' && event.message) {
         const usage = event.message.usage;
         const cost = usage ? this.calculateCost(usage, model) : 0;
         totalCost += cost;
+
+        const stepsBefore = steps.length;
 
         // Ensure content is an array
         const content = Array.isArray(event.message.content) ? event.message.content : [];
@@ -273,6 +286,11 @@ export class ParserService {
               filesWritten.add(block.input.file_path);
             }
           }
+        }
+
+        if (pendingCompactBoundary && steps.length > stepsBefore) {
+          steps[stepsBefore].postCompact = true;
+          pendingCompactBoundary = false;
         }
       }
 
