@@ -642,21 +642,45 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                   <span className="step-time">{formatTime(step.timestamp)}</span>
                   <span className="step-type">{step.toolName || step.type}</span>
                   {ownerAgent && (
-                    <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                      {ownerAgent.agentType || 'agent'}
-                    </span>
+                    <>
+                      <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
+                        {ownerAgent.agentType || 'agent'}
+                      </span>
+                      {/* Transcript of this agent lives in
+                          <session>/subagents/agent-<agentId>.jsonl — show the id
+                          so a row can be traced back to its own session file. */}
+                      <span
+                        className="step-agent-id"
+                        title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
+                      >
+                        {ownerAgent.agentId}
+                      </span>
+                    </>
                   )}
                   {linkedAgents && linkedAgents.length > 0 && (
-                    <button
-                      className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        for (const a of linkedAgents) toggleAgent(a.agentId);
-                      }}
-                      title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
-                    >
-                      {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
-                    </button>
+                    <>
+                      {/* The spawning Task row carries the id(s) of the agent
+                          session(s) it started, mirroring the agent rows below. */}
+                      {linkedAgents.map(a => (
+                        <span
+                          key={a.agentId}
+                          className="step-agent-id"
+                          title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                        >
+                          {a.agentId}
+                        </span>
+                      ))}
+                      <button
+                        className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          for (const a of linkedAgents) toggleAgent(a.agentId);
+                        }}
+                        title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
+                      >
+                        {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
+                      </button>
+                    </>
                   )}
                   {step.toolSuccess === true && <span className="step-success">✓</span>}
                   {getStepSummary(step) && (

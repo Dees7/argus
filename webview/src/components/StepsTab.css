@@ -724,6 +724,14 @@
   background: rgba(212, 167, 44, 0.12);
 }
 
+.step-agent-id {
+  margin-left: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  color: var(--text-dim);
+}
+
 .step-task-toggle {
   margin-left: 8px;
   padding: 2px 8px;
