@@ -130,7 +130,7 @@ function App() {
   return (
     <div className="app">
       <div className="detail-header">
-        <h2>{session.prompt}</h2>
+        <h2 title={session.prompt}>{session.aiTitle || session.prompt}</h2>
         <div className="detail-meta">
           <span>{session.project}</span>
           <span className="meta-badge">{formatModel(session.model)}</span>

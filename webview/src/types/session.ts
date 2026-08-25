@@ -1,6 +1,11 @@
 export interface SessionDetail {
   sessionId: string;
   prompt: string;
+  /**
+   * Title Claude Code generated for the session. Absent for sessions it never
+   * titled, where `prompt` is all we have.
+   */
+  aiTitle?: string;
   project: string;
   model: string;
   startTime: Date;

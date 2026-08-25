@@ -37,12 +37,34 @@ const INJECTED_BLOCK_RE = new RegExp(
 const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
 
+/**
+ * How far into a transcript the metadata scan keeps looking for the pieces it
+ * has not found yet. The first human prompt lands by line 8 and the first
+ * `ai-title` by line 12 in every transcript we have seen, so the limit only
+ * ever kicks in for sessions that carry none — VSCode/SDK entrypoints never
+ * write `ai-title` — and stops those from being read end to end.
+ */
+const HEAD_SCAN_LINES = 200;
+
+/**
+ * Size of the window read from the end of a transcript to recover the final
+ * `ai-title`. Claude Code rewrites the line after almost every step, so the
+ * last one sits 4.5 KB from EOF at the median and under 256 KB in >99% of
+ * sessions; anything past that falls back to the title seen in the head.
+ */
+const TAIL_SCAN_BYTES = 256 * 1024;
+
 interface QuickMetadata {
   model: string;
   firstTimestamp: string;
   lastTimestamp: string;
   prompt: string;
   cwd: string;
+  /**
+   * Session title Claude Code generates and rewrites as a `{"type":"ai-title"}`
+   * line. Empty when the session never got one.
+   */
+  aiTitle: string;
 }
 
 export class ParserService {
@@ -91,13 +113,16 @@ export class ParserService {
       let lastTimestamp = '';
       let prompt = '';
       let cwd = '';
+      let aiTitle = '';
       let foundFirst = false;
+      let lines = 0;
 
       for await (const line of rl) {
         const trimmed = line.trim();
         if (!trimmed) {
           continue;
         }
+        lines++;
 
         try {
           const base: any = JSON.parse(trimmed);
@@ -126,13 +151,18 @@ export class ParserService {
             }
           }
 
+          if (!aiTitle && base.type === 'ai-title' && typeof base.aiTitle === 'string') {
+            aiTitle = base.aiTitle.trim();
+          }
+
           // Extract prompt from user events
           if (!prompt && base.type === 'user') {
             prompt = this.extractPromptFromEvent(base);
           }
 
-          // Stop early once we have all the metadata we need
-          if (model && prompt && cwd) {
+          // Stop early once we have all the metadata we need, or once we are
+          // deep enough that whatever is still missing is not coming.
+          if ((model && prompt && cwd && aiTitle) || lines >= HEAD_SCAN_LINES) {
             rl.close();
             break;
           }
@@ -145,17 +175,65 @@ export class ParserService {
         return null;
       }
 
+      // The title seen in the head can be a draft that a later line replaces.
+      const finalTitle = await this.readTailAiTitle(filePath);
+
       return {
         model,
         firstTimestamp,
         lastTimestamp,
         prompt,
         cwd,
+        aiTitle: finalTitle || aiTitle,
       };
     } catch (err) {
       console.error('Error reading metadata from', filePath, err);
       return null;
     }
+  }
+
+  /**
+   * Last `ai-title` written in the tail window of a transcript, or '' when the
+   * window holds none. Reading the tail rather than the whole file keeps
+   * discovery off multi-megabyte transcripts; the caller falls back to the
+   * title from the head when this comes back empty.
+   */
+  private async readTailAiTitle(filePath: string): Promise<string> {
+    try {
+      const { size } = await fs.promises.stat(filePath);
+      const start = Math.max(0, size - TAIL_SCAN_BYTES);
+
+      const chunk = await new Promise<string>((resolve, reject) => {
+        const parts: Buffer[] = [];
+        const stream = fs.createReadStream(filePath, { start });
+        stream.on('data', part => parts.push(part as Buffer));
+        stream.on('end', () => resolve(Buffer.concat(parts).toString('utf-8')));
+        stream.on('error', reject);
+      });
+
+      const lines = chunk.split('\n');
+      // A window that starts mid-file opens on a partial line.
+      const first = start > 0 ? 1 : 0;
+
+      for (let i = lines.length - 1; i >= first; i--) {
+        const line = lines[i];
+        if (!line.includes('"ai-title"')) {
+          continue;
+        }
+        try {
+          const event: any = JSON.parse(line);
+          if (event.type === 'ai-title' && typeof event.aiTitle === 'string') {
+            return event.aiTitle.trim();
+          }
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      // Unreadable file: the head pass already reported what it could.
+    }
+
+    return '';
   }
 
   /**
@@ -184,7 +262,9 @@ export class ParserService {
 
         try {
           const entry = JSON.parse(trimmed) as HistoryEntry;
-          if (entry.sessionId) {
+          // First entry wins: a session's later entries are whatever was typed
+          // last, so keeping them would label sessions "/exit" or "/context".
+          if (entry.sessionId && !historyMap.has(entry.sessionId)) {
             historyMap.set(entry.sessionId, entry);
           }
         } catch {
@@ -612,27 +692,20 @@ export class ParserService {
 
   // Helper methods
 
+  /**
+   * Headline text of a user turn: what the person typed, with the harness's
+   * injected wrappers stripped. Turns that are nothing but an
+   * `<ide_opened_file>` notice or a compaction caveat return '', so the caller
+   * keeps looking and does not label a session with an IDE event.
+   */
   private extractPromptFromEvent(event: any): string {
     try {
-      if (!event.message?.content) {
+      if (!event.message?.content || event.isMeta || event.isCompactSummary) {
         return '';
       }
 
-      const content = event.message.content;
-
-      // content is a string
-      if (typeof content === 'string') {
-        return this.truncatePrompt(content, 200);
-      }
-
-      // content is an array
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === 'text' && block.text) {
-            return this.truncatePrompt(block.text, 200);
-          }
-        }
-      }
+      const input = this.extractUserInput(event.message.content);
+      return input ? this.truncatePrompt(input, 200) : '';
     } catch {
       // ignore
     }

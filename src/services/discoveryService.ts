@@ -16,6 +16,8 @@ export interface DiscoveredSession {
   projectPath: string;
   model: string;
   prompt: string;
+  /** Title Claude Code generated for the session, '' when it never did. */
+  aiTitle: string;
   timestamp: Date;
   lastModified: Date;
   source: 'history' | 'scan';
@@ -136,6 +138,8 @@ export class DiscoveryService {
 
     if (needsDiscovery) {
       await this.refreshDiscovery();
+    } else {
+      await this.refreshChangedSessions();
     }
 
     const now = Date.now();
@@ -148,6 +152,7 @@ export class DiscoveryService {
       summaries.push({
         sessionId: ds.sessionId,
         prompt: ds.prompt,
+        aiTitle: ds.aiTitle || undefined,
         project: ds.project,
         projectPath: ds.projectPath,
         model: ds.model,
@@ -205,6 +210,49 @@ export class DiscoveryService {
 
     this.claudeDirs = result.claudeDirs;
     this.lastDiscovery = new Date();
+  }
+
+  /**
+   * Re-read the metadata of sessions whose transcript grew since we indexed
+   * them, without rescanning the whole projects tree. A session gets its
+   * `ai-title` only after the first assistant reply, so a session opened
+   * moments ago would otherwise sit in the list under its raw prompt until the
+   * next full discovery.
+   */
+  private async refreshChangedSessions(): Promise<void> {
+    const stale: DiscoveredSession[] = [];
+
+    for (const ds of this.sessionIndex.values()) {
+      try {
+        const stat = fs.statSync(ds.filePath);
+        if (stat.mtime.getTime() !== ds.lastModified.getTime()) {
+          stale.push(ds);
+        }
+      } catch {
+        // File vanished; leave the cached entry for the next full discovery.
+      }
+    }
+
+    if (stale.length === 0) {
+      return;
+    }
+
+    const historyMap = await this.parserService.readHistoryMap();
+
+    for (const ds of stale) {
+      const updated = await this.processSessionFile(
+        {
+          sessionId: ds.sessionId,
+          filePath: ds.filePath,
+          projectDir: ds.projectDir,
+          subagentFiles: this.listSubagentFiles(ds.projectDir, ds.sessionId),
+        },
+        historyMap
+      );
+      if (updated) {
+        this.sessionIndex.set(updated.sessionId, updated);
+      }
+    }
   }
 
   /**
@@ -277,6 +325,7 @@ export class DiscoveryService {
       projectPath: metadata.cwd || '',
       model: metadata.model || 'unknown',
       prompt: '',
+      aiTitle: metadata.aiTitle,
       timestamp: new Date(),
       lastModified: new Date(),
       source: 'scan',
@@ -290,11 +339,13 @@ export class DiscoveryService {
       // ignore
     }
 
-    // Prefer history data for prompt and project
+    // Prefer history data for project and timing. The prompt comes from the
+    // transcript first: history records the raw keystrokes of the turn, while
+    // the transcript keeps the message with the harness's wrappers stripped.
     const historyEntry = historyMap.get(info.sessionId);
     if (historyEntry) {
       ds.source = 'history';
-      ds.prompt = historyEntry.display || metadata.prompt;
+      ds.prompt = metadata.prompt || historyEntry.display;
       if (historyEntry.project) {
         ds.project = this.humanProjectName(historyEntry.project);
         // History records the absolute cwd; prefer it over the transcript's,

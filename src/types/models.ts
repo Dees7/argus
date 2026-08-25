@@ -46,6 +46,11 @@ export interface HistoryEntry {
 export interface SessionSummary {
   sessionId: string;
   prompt: string;
+  /**
+   * Title Claude Code generated for the session. Absent for sessions it never
+   * titled — VSCode/SDK entrypoints among them — where `prompt` is all we have.
+   */
+  aiTitle?: string;
   project: string;
   /**
    * Absolute working directory the session ran in, when it can be recovered
@@ -71,6 +76,8 @@ export interface DashboardStats {
 export interface SessionDetail {
   sessionId: string;
   prompt: string;
+  /** See `SessionSummary.aiTitle`. */
+  aiTitle?: string;
   project: string;
   model: string;
   startTime: Date;
