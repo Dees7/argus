@@ -65,9 +65,7 @@
     "url": "https://github.com/yessGlory17/argus/issues"
   },
   "homepage": "https://github.com/yessGlory17/argus#readme",
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
