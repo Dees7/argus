@@ -43,7 +43,7 @@ export class SessionWebviewProviderReact {
     const panel = vscode.window.createWebviewPanel(
       'argusSession',
       `Argus: ${sessionData.prompt.substring(0, 30)}...`,
-      vscode.ViewColumn.Beside,
+      this.getViewColumn(),
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -122,11 +122,24 @@ export class SessionWebviewProviderReact {
     };
   }
 
+  /**
+   * Where a session panel opens. `active` reuses the current editor group, so
+   * every session becomes a tab there; `beside` keeps the old behaviour of
+   * splitting off a group next to the active one.
+   */
+  private getViewColumn(): vscode.ViewColumn {
+    const location = vscode.workspace
+      .getConfiguration('argus')
+      .get<string>('openLocation', 'active');
+
+    return location === 'beside' ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active;
+  }
+
   async openDashboard(): Promise<void> {
     const panel = vscode.window.createWebviewPanel(
       'argusDashboard',
       'Argus Dashboard',
-      vscode.ViewColumn.Beside,
+      this.getViewColumn(),
       {
         enableScripts: true,
         retainContextWhenHidden: true,

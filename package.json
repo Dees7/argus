@@ -230,6 +230,19 @@
           ],
           "description": "Language for analysis findings"
         },
+        "argus.openLocation": {
+          "type": "string",
+          "default": "active",
+          "enum": [
+            "active",
+            "beside"
+          ],
+          "enumDescriptions": [
+            "Open the session as a tab in the currently active editor group",
+            "Open the session in an editor group next to the active one"
+          ],
+          "description": "Where a session opens when clicked in the Sessions view."
+        },
         "argus.steps.sortOrder": {
           "type": "string",
           "default": "newest",
