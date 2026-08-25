@@ -843,28 +843,11 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                       </button>
                     </>
                   )}
-                  {step.toolSuccess === true && <span className="step-success">✓</span>}
+                  {/* Success/error state is carried by the row colouring alone
+                      (.step-item-error) — no extra tick or badge here. */}
                   {summary && summary.text && (
                     <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
                       {summary.text}
-                    </span>
-                  )}
-                  {step.toolSuccess === false && (
-                    <span className="step-failed" title="Tool returned an error">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="15" y1="9" x2="9" y2="15" />
-                        <line x1="9" y1="9" x2="15" y2="15" />
-                      </svg>
-                      <span className="step-failed-label">error</span>
                     </span>
                   )}
                 </div>
