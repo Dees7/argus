@@ -87,6 +87,11 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     this._view?.webview.postMessage({ type: 'clearDateFilter' });
   }
 
+  /** Apply a change of `argus.searchBar.showModelSelector` without a reload. */
+  setModelSelectorVisible(value: boolean): void {
+    this._view?.webview.postMessage({ type: 'showModelSelector', value });
+  }
+
   /** Show/hide the spinner while a full-text scan is running. */
   setSearching(value: boolean): void {
     this._view?.webview.postMessage({ type: 'searching', value });
@@ -99,6 +104,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const sessionIconUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(this._extensionPath, 'resources', 'session.svg'))
     );
+    const showModelSelector = vscode.workspace
+      .getConfiguration('argus')
+      .get<boolean>('searchBar.showModelSelector', true);
+    const modelHidden = showModelSelector ? '' : ' hidden';
 
     return `<!DOCTYPE html>
 <html>
@@ -215,6 +224,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     position: relative;
     flex-shrink: 0;
   }
+  .hidden { display: none !important; }
   .dropdown-trigger {
     display: flex;
     align-items: center;
@@ -620,8 +630,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       <input type="text" id="search" placeholder="Search title, project or id..." spellcheck="false">
       <button class="clear-btn" id="clearBtn">&times;</button>
       <button class="scope-btn" id="scopeBtn" title="Search inside transcripts too (slower)">&lowast;</button>
-      <span class="divider"></span>
-      <div class="dropdown" id="modelDropdown">
+      <span class="divider${modelHidden}" id="modelDivider"></span>
+      <div class="dropdown${modelHidden}" id="modelDropdown">
         <button class="dropdown-trigger" id="modelTrigger">
           <svg class="dropdown-trigger-icon" viewBox="0 0 16 16" fill="currentColor">
             <path d="M6 12v-1h4v1H6zM4 8v-1h8v1H4zM2 4v-1h12v1H2z"/>
@@ -674,6 +684,16 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
             <span class="dropdown-item-label">Last 1 hour</span>
             <span class="dropdown-item-shortcut">1h</span>
+          </button>
+          <button class="dropdown-item" data-value="3h">
+            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+            <span class="dropdown-item-label">Last 3 hours</span>
+            <span class="dropdown-item-shortcut">3h</span>
+          </button>
+          <button class="dropdown-item" data-value="6h">
+            <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
+            <span class="dropdown-item-label">Last 6 hours</span>
+            <span class="dropdown-item-shortcut">6h</span>
           </button>
           <button class="dropdown-item" data-value="24h">
             <svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>
@@ -741,6 +761,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const trigger = document.getElementById('modelTrigger');
     const modelLabel = document.getElementById('modelLabel');
     const modelMenu = document.getElementById('modelMenu');
+    const modelDivider = document.getElementById('modelDivider');
     let selectedModel = '';
 
     trigger.addEventListener('click', (e) => {
@@ -749,9 +770,21 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       dropdown.classList.toggle('open');
     });
 
-    document.addEventListener('click', () => {
+    // A menu stays open only while it has the user's attention: a click
+    // elsewhere in the panel, focus leaving the webview (clicking the editor or
+    // another view), the view being hidden, or Escape all dismiss it.
+    function closeDropdowns() {
       dropdown.classList.remove('open');
       dateDropdown.classList.remove('open');
+    }
+
+    document.addEventListener('click', closeDropdowns);
+    window.addEventListener('blur', closeDropdowns);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) closeDropdowns();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDropdowns();
     });
 
     modelMenu.addEventListener('click', (e) => {
@@ -926,7 +959,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       calRender();
     });
 
-    const dateLabels = { 'all': 'All', '1h': '1h', '24h': '24h', '7d': '7d', '30d': '30d', 'custom': 'Custom' };
+    const dateLabels = { 'all': 'All', '1h': '1h', '3h': '3h', '6h': '6h', '24h': '24h', '7d': '7d', '30d': '30d', 'custom': 'Custom' };
 
     dateTrigger.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1048,6 +1081,17 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         trigger.classList.remove('has-value');
         modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
         modelMenu.querySelector('.dropdown-item[data-value=""]').classList.add('selected');
+      } else if (msg.type === 'showModelSelector') {
+        dropdown.classList.toggle('hidden', !msg.value);
+        modelDivider.classList.toggle('hidden', !msg.value);
+        if (!msg.value) {
+          dropdown.classList.remove('open');
+          selectedModel = '';
+          modelLabel.textContent = 'All';
+          trigger.classList.remove('has-value');
+          modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+          modelMenu.querySelector('.dropdown-item[data-value=""]').classList.add('selected');
+        }
       } else if (msg.type === 'clearDateFilter') {
         selectedDate = 'all';
         dateLabel.textContent = 'All';

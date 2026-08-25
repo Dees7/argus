@@ -138,6 +138,16 @@
         "category": "Argus"
       },
       {
+        "command": "argus.setDate3h",
+        "title": "Last 3 Hours",
+        "category": "Argus"
+      },
+      {
+        "command": "argus.setDate6h",
+        "title": "Last 6 Hours",
+        "category": "Argus"
+      },
+      {
         "command": "argus.setDate24h",
         "title": "Last 24 Hours",
         "category": "Argus"
@@ -242,6 +252,11 @@
             "Open the session in an editor group next to the active one"
           ],
           "description": "Where a session opens when clicked in the Sessions view."
+        },
+        "argus.searchBar.showModelSelector": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the model selector next to the search box in the Sessions view. When turned off the selector is hidden and any active model filter is cleared."
         },
         "argus.steps.sortOrder": {
           "type": "string",

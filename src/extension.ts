@@ -72,6 +72,12 @@ export function activate(context: vscode.ExtensionContext) {
       case '1h':
         result = result.filter(s => now - s.lastModified.getTime() < 60 * 60 * 1000);
         break;
+      case '3h':
+        result = result.filter(s => now - s.lastModified.getTime() < 3 * 60 * 60 * 1000);
+        break;
+      case '6h':
+        result = result.filter(s => now - s.lastModified.getTime() < 6 * 60 * 60 * 1000);
+        break;
       case '24h':
         result = result.filter(s => now - s.lastModified.getTime() < 24 * 60 * 60 * 1000);
         break;
@@ -255,6 +261,25 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Show/hide the model selector live. Hiding it would otherwise leave an
+  // invisible model filter applied, so drop the filter along with the control.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration('argus.searchBar.showModelSelector')) {
+        return;
+      }
+      const visible = vscode.workspace
+        .getConfiguration('argus')
+        .get<boolean>('searchBar.showModelSelector', true);
+      listViewProvider.setModelSelectorVisible(visible);
+      if (!visible && filterState.selectedModels.length > 0) {
+        filterState.selectedModels = [];
+        syncContextKeys();
+        refreshList();
+      }
+    })
+  );
+
   // --- Commands ---
 
   context.subscriptions.push(
@@ -313,6 +338,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.setDateAll', () => setDatePreset('all')),
     vscode.commands.registerCommand('argus.setDate1h', () => setDatePreset('1h')),
+    vscode.commands.registerCommand('argus.setDate3h', () => setDatePreset('3h')),
+    vscode.commands.registerCommand('argus.setDate6h', () => setDatePreset('6h')),
     vscode.commands.registerCommand('argus.setDate24h', () => setDatePreset('24h')),
     vscode.commands.registerCommand('argus.setDate7d', () => setDatePreset('7d')),
     vscode.commands.registerCommand('argus.setDate30d', () => setDatePreset('30d'))

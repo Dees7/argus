@@ -117,7 +117,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 ### Sidebar & filtering
 
 - Inline session search and model filter (Opus / Sonnet / Haiku)
-- Date presets (1h / 24h / 7d / 30d) plus a custom calendar range picker
+- Date presets (1h / 3h / 6h / 24h / 7d / 30d) plus a custom calendar range picker
 - Group by project, by model, or flat list
 - Sticky headers, tabs, and filters that stay put while content scrolls
 - Native dark-mode integration with the active VS Code theme
@@ -190,6 +190,7 @@ Argus exposes the following VS Code settings:
 | `argus.scanDepth` | `5` | Maximum directory depth when scanning `.claude` directories |
 | `argus.language` | `"en"` | UI / findings language — `"en"` or `"tr"` |
 | `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
+| `argus.searchBar.showModelSelector` | `true` | Show the model selector next to the search box in the Sessions view |
 | `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
 | `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
 | `argus.analysis.realCompactsOnly` | `false` | Report a compaction only where the transcript marks one, instead of inferring it from a token drop |

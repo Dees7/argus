@@ -1,7 +1,7 @@
 // Filter & grouping types
 
 export type GroupMode = 'none' | 'project' | 'model';
-export type DatePreset = 'all' | '1h' | '24h' | '7d' | '30d' | 'custom';
+export type DatePreset = 'all' | '1h' | '3h' | '6h' | '24h' | '7d' | '30d' | 'custom';
 
 export interface FilterState {
   searchQuery: string;
