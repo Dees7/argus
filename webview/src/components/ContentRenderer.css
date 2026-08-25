@@ -69,12 +69,16 @@
   line-height: 1.65;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  max-height: 720px;
-  overflow-y: auto;
+  max-height: none;
 }
 
-.cr-pretty > *:first-child { margin-top: 0; }
-.cr-pretty > *:last-child  { margin-bottom: 0; }
+.cr-pretty>*:first-child {
+  margin-top: 0;
+}
+
+.cr-pretty>*:last-child {
+  margin-bottom: 0;
+}
 
 .cr-pretty p {
   margin: 0 0 10px;
@@ -92,12 +96,27 @@
   line-height: 1.3;
 }
 
-.cr-pretty h1 { font-size: 1.4em; }
-.cr-pretty h2 { font-size: 1.25em; }
-.cr-pretty h3 { font-size: 1.1em; }
-.cr-pretty h4 { font-size: 1em; }
+.cr-pretty h1 {
+  font-size: 1.4em;
+}
+
+.cr-pretty h2 {
+  font-size: 1.25em;
+}
+
+.cr-pretty h3 {
+  font-size: 1.1em;
+}
+
+.cr-pretty h4 {
+  font-size: 1em;
+}
+
 .cr-pretty h5,
-.cr-pretty h6 { font-size: 0.95em; color: var(--text-dim); }
+.cr-pretty h6 {
+  font-size: 0.95em;
+  color: var(--text-dim);
+}
 
 .cr-pretty ul,
 .cr-pretty ol {
@@ -109,7 +128,7 @@
   margin: 2px 0;
 }
 
-.cr-pretty li > p {
+.cr-pretty li>p {
   margin: 0;
 }
 
@@ -136,8 +155,13 @@
   text-decoration: underline;
 }
 
-.cr-pretty strong { color: var(--text-bright); }
-.cr-pretty em     { font-style: italic; }
+.cr-pretty strong {
+  color: var(--text-bright);
+}
+
+.cr-pretty em {
+  font-style: italic;
+}
 
 .cr-pretty code {
   font-family: var(--font-code), monospace;
@@ -223,6 +247,5 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text);
-  max-height: 720px;
-  overflow-y: auto;
+  max-height: none;
 }

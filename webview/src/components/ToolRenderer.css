@@ -84,8 +84,7 @@
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 320px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 .tr-toolbar {
@@ -263,8 +262,7 @@
   font-size: 12px;
   line-height: 1.55;
   overflow-x: auto;
-  max-height: 720px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 .tr-code code {
@@ -351,8 +349,7 @@
   font-size: 12px;
   line-height: 1.55;
   overflow-x: auto;
-  max-height: 720px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 .tr-diff-line {
@@ -476,8 +473,7 @@
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 520px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 .tr-bash-stdout {
@@ -519,8 +515,7 @@
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 600px;
-  overflow-y: auto;
+  max-height: none;
   background: var(--bg-dark, #1a1a1a);
 }
 
@@ -530,8 +525,7 @@
   list-style: none;
   font-family: var(--font-code), monospace;
   font-size: 12px;
-  max-height: 520px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 .tr-glob-list li {
@@ -597,8 +591,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text);
-  max-height: 600px;
-  overflow-y: auto;
+  max-height: none;
 }
 
 /* ─── TodoWrite ──────────────────────────────────────────────────── */
