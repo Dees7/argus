@@ -297,8 +297,11 @@ export class ParserService {
     let endTime = new Date();
     let totalCost = 0;
 
-    // Track tool calls and their results
+    // Track tool calls and their results. Two indexes: by the assistant
+    // event's UUID (what `sourceToolAssistantUUID` points at) and by the
+    // `tool_use` block id (what a `tool_result` block points at).
     const toolCallMap = new Map<string, Partial<Step>>();
+    const toolCallByUseId = new Map<string, Partial<Step>>();
 
     // One API response is written as several JSONL events — one per content
     // block — each repeating the same `message.id` and the same `usage`.
@@ -471,6 +474,9 @@ export class ParserService {
             // Key by assistant event UUID — sourceToolAssistantUUID in
             // user events references this, not the tool_use block id.
             toolCallMap.set(event.uuid, toolStep);
+            if (block.id) {
+              toolCallByUseId.set(block.id, toolStep);
+            }
 
             steps.push(toolStep as Step);
 
@@ -490,36 +496,59 @@ export class ParserService {
         }
       }
 
-      // Process tool results. The error flag (`is_error: true`) lives on
-      // the tool_result content block inside `event.message.content`, not
-      // on `event.toolUseResult` (which is often just a string preview of
-      // the result body). Resolve the source-tool's UUID against the
-      // tool_result blocks to find the matching one. Fall back to a
-      // string-prefix check on `toolUseResult` for older session formats
-      // that stored the result as a plain "Error: ..." string.
-      if (event.type === 'user' && event.toolUseResult && event.sourceToolAssistantUUID) {
-        const toolStep = toolCallMap.get(event.sourceToolAssistantUUID);
-        if (toolStep && typeof toolStep.index === 'number') {
-          const result = event.toolUseResult;
-          steps[toolStep.index].toolResult = JSON.stringify(result);
+      // Process tool results. Two transcript shapes carry them:
+      //  - main sessions put the structured body on `event.toolUseResult`
+      //    (`{stdout, stderr, …}`, `{file: {content, …}}`, …) — the shape the
+      //    per-tool renderers expect;
+      //  - sub-agent transcripts omit `toolUseResult` entirely and keep the
+      //    body only inside the `tool_result` content blocks, as plain text.
+      // Without the second path every tool call inside an agent renders with
+      // no output at all.
+      // The error flag (`is_error: true`) always lives on the content block,
+      // never on `toolUseResult` (which is often just a preview string), with
+      // a string-prefix fallback for older sessions that stored the result as
+      // a plain "Error: ..." string.
+      if (event.type === 'user') {
+        const blocks: any[] = Array.isArray(event.message?.content)
+          ? (event.message!.content as any[])
+          : [];
+        const resultBlocks = blocks.filter((b) => b && b.type === 'tool_result');
+        const hasLegacyResult =
+          event.toolUseResult !== undefined && !!event.sourceToolAssistantUUID;
 
-          let isError = false;
-          const blocks = event.message?.content;
-          if (Array.isArray(blocks)) {
-            for (const b of blocks) {
-              if (b && b.type === 'tool_result' && b.is_error === true) {
-                isError = true;
-                break;
-              }
+        if (resultBlocks.length > 0 || hasLegacyResult) {
+          // No blocks at all → one pass driven by `toolUseResult` alone.
+          const entries: any[] = resultBlocks.length > 0 ? resultBlocks : [null];
+          // `toolUseResult` describes the turn as a whole, so it can only be
+          // attributed when the turn carries a single result.
+          const legacyApplies = hasLegacyResult && entries.length === 1;
+
+          for (const block of entries) {
+            const toolStep =
+              (block?.tool_use_id ? toolCallByUseId.get(block.tool_use_id) : undefined) ??
+              (event.sourceToolAssistantUUID
+                ? toolCallMap.get(event.sourceToolAssistantUUID)
+                : undefined);
+            if (!toolStep || typeof toolStep.index !== 'number') {
+              continue;
             }
+
+            const result = legacyApplies
+              ? event.toolUseResult
+              : this.extractToolResultBody(block);
+            if (result !== undefined) {
+              steps[toolStep.index].toolResult = JSON.stringify(result);
+            }
+
+            let isError = block?.is_error === true;
+            if (!isError && typeof result === 'object' && result !== null && (result as any).is_error === true) {
+              isError = true;
+            }
+            if (!isError && typeof result === 'string' && /^error\b/i.test(result.trim())) {
+              isError = true;
+            }
+            steps[toolStep.index].toolSuccess = !isError;
           }
-          if (!isError && typeof result === 'object' && result !== null && (result as any).is_error === true) {
-            isError = true;
-          }
-          if (!isError && typeof result === 'string' && /^error\b/i.test(result.trim())) {
-            isError = true;
-          }
-          steps[toolStep.index].toolSuccess = !isError;
         }
       }
     }
@@ -541,6 +570,45 @@ export class ParserService {
       filesWritten: Array.from(filesWritten),
       toolsUsed: Object.fromEntries(toolsUsed),
     };
+  }
+
+  /**
+   * The body of a `tool_result` content block, flattened to text. The `content`
+   * field is either a plain string or a list of blocks: `text` for ordinary
+   * output, `tool_reference` for a ToolSearch result (which names the tools it
+   * loaded and carries no other payload), `image` for screenshots.
+   */
+  private extractToolResultBody(block: any): string | undefined {
+    if (!block) {
+      return undefined;
+    }
+    const content = block.content;
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      const parts: string[] = [];
+      for (const c of content) {
+        if (typeof c === 'string') {
+          parts.push(c);
+        } else if (c?.type === 'text' && typeof c.text === 'string') {
+          parts.push(c.text);
+        } else if (c?.type === 'tool_reference' && typeof c.tool_name === 'string') {
+          parts.push(c.tool_name);
+        } else if (c?.type === 'image') {
+          parts.push('[image]');
+        }
+      }
+      return parts.join('\n');
+    }
+    if (content === undefined || content === null) {
+      return undefined;
+    }
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
   }
 
   /**

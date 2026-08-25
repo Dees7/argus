@@ -161,7 +161,10 @@ const ReadRenderer = ({ input, result }: { input: any; result: any }) => {
   const file = result?.file ?? {};
   const totalLines: number | undefined = file.totalLines;
   const numLines: number | undefined = file.numLines;
-  const content: string | undefined = file.content;
+  // Sub-agent transcripts carry the result as plain text rather than the
+  // structured `{file: …}` envelope the main session records.
+  const content: string | undefined =
+    file.content ?? (typeof result === 'string' ? result : undefined);
   const startLine = offset && offset > 0 ? offset : 1;
 
   let metaParts: string[] = [];
