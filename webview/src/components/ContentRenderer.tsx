@@ -47,8 +47,12 @@ const KIND_LABEL: Record<string, string> = {
   user: 'User Prompt',
 };
 
+// pretty = markdown, raw = verbatim with horizontal scroll, wrap = raw with
+// long lines folded to the panel width.
+type View = 'pretty' | 'raw' | 'wrap';
+
 const ContentRenderer = ({ step, meta }: Props) => {
-  const [showRaw, setShowRaw] = useState(false);
+  const [view, setView] = useState<View>('pretty');
   const content = step.content || '';
   const kind = step.type;
   const label = KIND_LABEL[kind];
@@ -74,24 +78,32 @@ const ContentRenderer = ({ step, meta }: Props) => {
         <div className="cr-toggle">
           <button
             type="button"
-            className={`cr-toggle-btn${!showRaw ? ' active' : ''}`}
-            onClick={() => setShowRaw(false)}
+            className={`cr-toggle-btn${view === 'pretty' ? ' active' : ''}`}
+            onClick={() => setView('pretty')}
           >
             Pretty
           </button>
           <button
             type="button"
-            className={`cr-toggle-btn${showRaw ? ' active' : ''}`}
-            onClick={() => setShowRaw(true)}
+            className={`cr-toggle-btn${view === 'raw' ? ' active' : ''}`}
+            onClick={() => setView('raw')}
           >
             Raw
           </button>
+          <button
+            type="button"
+            className={`cr-toggle-btn${view === 'wrap' ? ' active' : ''}`}
+            onClick={() => setView('wrap')}
+            title="Raw view with long lines wrapped to the panel width"
+          >
+            Wrap
+          </button>
         </div>
       </div>
-      {showRaw ? (
-        <pre className="cr-raw">{content}</pre>
-      ) : (
+      {view === 'pretty' ? (
         <div className="cr-pretty" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre className={`cr-raw${view === 'wrap' ? ' cr-raw-wrap' : ''}`}>{content}</pre>
       )}
     </div>
   );

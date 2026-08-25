@@ -516,20 +516,21 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
-const RawView = ({ step }: { step: Step }) => {
+const RawView = ({ step, wrap }: { step: Step; wrap?: boolean }) => {
   const result = parseToolResult(step.toolResult);
+  const preClass = `tr-code-raw${wrap ? ' tr-code-raw-wrap' : ''}`;
   return (
     <div className="tr-raw">
       {step.toolInput !== undefined && (
         <div className="tr-raw-section">
           <div className="tr-section-label">Tool Input</div>
-          <pre className="tr-code-raw">{JSON.stringify(step.toolInput, null, 2)}</pre>
+          <pre className={preClass}>{JSON.stringify(step.toolInput, null, 2)}</pre>
         </div>
       )}
       {step.toolResult !== undefined && (
         <div className="tr-raw-section">
           <div className="tr-section-label">Tool Result</div>
-          <pre className="tr-code-raw">
+          <pre className={preClass}>
             {result.ok && typeof result.value === 'object'
               ? JSON.stringify(result.value, null, 2)
               : String(result.value ?? step.toolResult)}
@@ -569,6 +570,10 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   WebSearch: WebSearchRenderer,
 };
 
+// pretty = per-tool renderer, raw = JSON dump with horizontal scroll,
+// wrap = same dump with long lines folded to the panel width.
+type View = 'pretty' | 'raw' | 'wrap';
+
 interface ToolRendererProps {
   step: Step;
   // Rendered at the left of the pretty/raw toolbar — token counts today.
@@ -576,7 +581,7 @@ interface ToolRendererProps {
 }
 
 const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
-  const [showRaw, setShowRaw] = useState(false);
+  const [view, setView] = useState<View>('pretty');
   const tool = step.toolName;
   const renderer = tool ? RENDERERS[tool] : undefined;
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
@@ -585,6 +590,8 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   if (!step.toolInput && !step.toolResult) return null;
 
   const hasPretty = !!renderer;
+  // Tools without a pretty renderer fall back to Raw, but keep Wrap available.
+  const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
   const errorMessage = isError ? extractErrorMessage(parsed.value) : '';
 
@@ -596,25 +603,33 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
           {meta}
         </div>
         {/* Tools without a dedicated renderer (MCP ones especially) still get
-            the bar — a lone, always-active Raw button — so the toolbar's
-            token counts have a consistent home. */}
+            the bar — Raw/Wrap only — so the toolbar's token counts have a
+            consistent home. */}
         <div className="tr-toggle">
           {hasPretty && (
             <button
-              className={`tr-toggle-btn${!showRaw ? ' active' : ''}`}
-              onClick={() => setShowRaw(false)}
+              className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
+              onClick={() => setView('pretty')}
               type="button"
             >
               Pretty
             </button>
           )}
           <button
-            className={`tr-toggle-btn${showRaw || !hasPretty ? ' active' : ''}`}
-            onClick={() => setShowRaw(true)}
+            className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
+            onClick={() => setView('raw')}
             type="button"
             title={hasPretty ? undefined : 'No pretty view for this tool'}
           >
             Raw
+          </button>
+          <button
+            className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
+            onClick={() => setView('wrap')}
+            type="button"
+            title="Raw view with long lines wrapped to the panel width"
+          >
+            Wrap
           </button>
         </div>
       </div>
@@ -622,7 +637,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
       {/* Error banner — pretty view only. The full message is shown verbatim
           (no truncation) so the operator can debug from a glance. The raw
           view already exposes the same data via the JSON dump. */}
-      {!showRaw && isError && errorMessage && (
+      {active === 'pretty' && isError && errorMessage && (
         <div className="tr-error-banner">
           <div className="tr-error-banner-head">
             <svg
@@ -645,10 +660,10 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
         </div>
       )}
 
-      {hasPretty && !showRaw ? (
+      {active === 'pretty' ? (
         renderer!({ input: step.toolInput, result: parsed.value })
       ) : (
-        <RawView step={step} />
+        <RawView step={step} wrap={active === 'wrap'} />
       )}
     </div>
   );

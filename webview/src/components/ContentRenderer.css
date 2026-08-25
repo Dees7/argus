@@ -244,7 +244,9 @@
   font-style: normal;
 }
 
-/* Raw view — straight monospace dump, no truncation */
+/* Raw view — straight monospace dump, no truncation. Lines keep their
+   original length and scroll sideways; the Wrap variant folds them to the
+   panel width instead. */
 .cr-raw {
   margin: 0;
   padding: 12px 14px;
@@ -252,8 +254,15 @@
   font-family: var(--font-code), monospace;
   font-size: 12px;
   line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  overflow-x: auto;
   color: var(--text);
   max-height: none;
+}
+
+.cr-raw-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
 }

@@ -300,6 +300,15 @@
   white-space: pre;
 }
 
+/* Wrap view — same dump, long lines folded to the panel width instead of
+   scrolling sideways. */
+.tr-code-raw-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+}
+
 /* ─── Diff (Edit/MultiEdit) ───────────────────────────────────────── */
 .tr-diff {
   background: var(--bg-dark, #1a1a1a);
