@@ -415,6 +415,18 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Re-read the index after a session panel deleted its transcript. The file
+  // watcher below notices too, but only after the OS event round-trip, which
+  // would leave the deleted session sitting in the list in the meantime.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('argus.sessionsChanged', async () => {
+      await discoveryService.refreshDiscovery();
+      searchService.invalidate();
+      allSessions = discoveryService.getSessionSummaries();
+      refreshList();
+    })
+  );
+
   // Clear filters
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.clearFilters', () => {

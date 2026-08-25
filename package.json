@@ -273,6 +273,11 @@
           ],
           "description": "Where a session opens when clicked in the Sessions view."
         },
+        "argus.delete.useTrash": {
+          "type": "boolean",
+          "default": true,
+          "description": "Move deleted sessions to the system trash so they can be recovered. When the trash is unavailable, Argus asks before deleting permanently instead. Turn this off to delete sessions permanently right away, with a single confirmation."
+        },
         "argus.searchBar.showModelSelector": {
           "type": "boolean",
           "default": true,

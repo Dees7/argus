@@ -105,6 +105,16 @@ export class SessionWebviewProviderReact {
               await vscode.env.clipboard.writeText(message.text);
             }
             break;
+          case 'deleteSession':
+            // The id comes from this closure, never from the message: the
+            // webview asks to delete "its" session and cannot name another.
+            try {
+              await this.deleteSession(sessionId, panel);
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              vscode.window.showErrorMessage('Argus: failed to delete session: ' + msg);
+            }
+            break;
         }
       },
       undefined,
@@ -333,6 +343,124 @@ export class SessionWebviewProviderReact {
       subWatcher.close();
       this.subagentWatchers.delete(sessionId);
     }
+  }
+
+  /**
+   * Delete a session's transcript plus the sibling directory holding its
+   * sub-agent transcripts and tool results, then close its panel.
+   *
+   * Everything that matters happens here rather than in the webview: the
+   * webview has no file paths, and `window.confirm` is blocked inside one, so
+   * the confirmation has to be a host-side modal anyway.
+   */
+  private async deleteSession(sessionId: string, panel: vscode.WebviewPanel): Promise<void> {
+    const info = this.discoveryService.getSessionFilePath(sessionId);
+    if (!info) {
+      vscode.window.showErrorMessage(`Argus: session ${sessionId} is no longer on disk.`);
+      return;
+    }
+
+    // Already gone — deleted outside VS Code, or from a second window. There
+    // is nothing left to confirm, so just let go of the stale session.
+    if (!fs.existsSync(info.filePath)) {
+      this.discoveryService.removeSession(sessionId);
+      await vscode.commands.executeCommand('argus.sessionsChanged');
+      panel.dispose();
+      return;
+    }
+
+    // Unlinking a transcript Claude Code still has open succeeds, but leaves
+    // it appending to a file nobody can reach: the session keeps running
+    // while its history goes nowhere and `--resume` can no longer find it.
+    if (this.discoveryService.isSessionLive(sessionId)) {
+      vscode.window.showWarningMessage("Argus: can't delete an active session.");
+      return;
+    }
+
+    const sessionDir = path.join(info.projectDir, sessionId);
+    const targets = [vscode.Uri.file(info.filePath)];
+    if (fs.existsSync(sessionDir)) {
+      targets.push(vscode.Uri.file(sessionDir));
+    }
+
+    const useTrash = vscode.workspace
+      .getConfiguration('argus')
+      .get<boolean>('delete.useTrash', true);
+
+    const confirmed = await vscode.window.showWarningMessage(
+      useTrash
+        ? `Move session ${sessionId} to the trash?`
+        : `Permanently delete session ${sessionId}?`,
+      { modal: true, detail: targets.map(t => t.fsPath).join('\n') },
+      useTrash ? 'Move to Trash' : 'Delete Permanently'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    let failures = await this.removeAll(targets, useTrash);
+
+    // Not every filesystem has a trash (remotes, some Linux setups). Deleting
+    // outright is a reasonable fallback, but it turns a reversible action into
+    // an irreversible one, so it gets its own confirmation. With the trash
+    // turned off in settings the user already agreed to that above.
+    if (failures.length > 0 && useTrash) {
+      const bypass = await vscode.window.showWarningMessage(
+        `Argus: could not move session ${sessionId} to the trash.`,
+        {
+          modal: true,
+          detail: `${this.describeFailures(failures)}\n\nDelete permanently instead? This cannot be undone.`,
+        },
+        'Delete Permanently'
+      );
+      if (!bypass) {
+        return;
+      }
+      failures = await this.removeAll(failures.map(f => f.uri), false);
+    }
+
+    if (failures.length > 0) {
+      vscode.window.showErrorMessage(
+        `Argus: failed to delete session ${sessionId}. ${this.describeFailures(failures)}`
+      );
+    }
+
+    // The transcript is what makes a session exist for Argus. If only the
+    // sibling directory failed to go, the session is still gone from the list
+    // and the panel has nothing left to show; if the transcript itself
+    // survived, nothing changed and the panel stays open.
+    if (fs.existsSync(info.filePath)) {
+      return;
+    }
+
+    this.discoveryService.removeSession(sessionId);
+    await vscode.commands.executeCommand('argus.sessionsChanged');
+    // Disposing runs onDidDispose, which stops the watchers and drops the
+    // panel from the map — otherwise it would linger showing a session that
+    // can never be reloaded.
+    panel.dispose();
+  }
+
+  /** Deletes each target, returning the ones that refused to go. */
+  private async removeAll(
+    targets: vscode.Uri[],
+    useTrash: boolean
+  ): Promise<{ uri: vscode.Uri; error: unknown }[]> {
+    const failures: { uri: vscode.Uri; error: unknown }[] = [];
+    for (const uri of targets) {
+      try {
+        await vscode.workspace.fs.delete(uri, { recursive: true, useTrash });
+      } catch (error) {
+        failures.push({ uri, error });
+      }
+    }
+    return failures;
+  }
+
+  private describeFailures(failures: { uri: vscode.Uri; error: unknown }[]): string {
+    return failures
+      .map(f => `${f.uri.fsPath}: ${f.error instanceof Error ? f.error.message : String(f.error)}`)
+      .join('\n');
   }
 
   private async loadSessionData(sessionId: string): Promise<SessionDetail | null> {

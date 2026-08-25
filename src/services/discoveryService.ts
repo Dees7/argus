@@ -191,6 +191,38 @@ export class DiscoveryService {
   }
 
   /**
+   * Liveness check for one named session, guarding destructive actions.
+   *
+   * Unlike the indexed `isActive`, this re-stats the transcript instead of
+   * trusting the cached mtime: a watcher event we missed would otherwise make
+   * a running session look dead, and here that is the difference between
+   * keeping and losing its history. The coarse age cutoff is skipped too —
+   * for a single session the sub-agent stat is cheap.
+   */
+  isSessionLive(sessionId: string): boolean {
+    const ds = this.sessionIndex.get(sessionId);
+    if (!ds) {
+      return false;
+    }
+
+    const now = Date.now();
+    try {
+      if (now - fs.statSync(ds.filePath).mtimeMs < DiscoveryService.ACTIVE_WINDOW_MS) {
+        return true;
+      }
+    } catch {
+      return false; // Transcript is already gone; nothing is writing to it.
+    }
+
+    return now - this.latestSubagentMtime(ds) < DiscoveryService.ACTIVE_WINDOW_MS;
+  }
+
+  /** Drop a session from the index, after its transcript was deleted. */
+  removeSession(sessionId: string): void {
+    this.sessionIndex.delete(sessionId);
+  }
+
+  /**
    * Re-read metadata for the named sessions only. Used by the file watcher,
    * which knows exactly which transcript changed and has no reason to walk the
    * whole index. Ids that aren't indexed are ignored — the caller is expected

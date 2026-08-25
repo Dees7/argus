@@ -111,6 +111,14 @@ function App() {
     setTimeout(() => setIdCopied(false), 1500);
   };
 
+  // Deleting is entirely the extension host's job: it owns the file paths, the
+  // "is this session still running" check and the confirmation dialog — a
+  // webview can't show one of its own, window.confirm is blocked here. It
+  // closes this panel once the files are gone.
+  const deleteSession = () => {
+    window.vscodeApi?.postMessage({ type: 'deleteSession' });
+  };
+
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
@@ -143,6 +151,19 @@ function App() {
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="5.75" y="5.75" width="8.5" height="8.5" rx="1.5" />
                 <path d="M10.5 3.25v-.5A1 1 0 0 0 9.5 1.75h-6.75A1 1 0 0 0 1.75 2.75V9.5a1 1 0 0 0 1 1h.5" />
+              </svg>
+            </button>
+            <button
+              className="delete-btn"
+              onClick={deleteSession}
+              title="Delete session"
+              aria-label="Delete session"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2.5 4.25h11" strokeLinecap="round" />
+                <path d="M6.25 4.25v-1.5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5" />
+                <path d="M3.75 4.25 4.4 13.3a1 1 0 0 0 1 .95h5.2a1 1 0 0 0 1-.95l.65-9.05" />
+                <path d="M6.75 7v4.25M9.25 7v4.25" strokeLinecap="round" />
               </svg>
             </button>
           </span>
