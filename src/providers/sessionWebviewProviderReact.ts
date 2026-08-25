@@ -54,7 +54,7 @@ export class SessionWebviewProviderReact {
     // Create webview panel
     const panel = vscode.window.createWebviewPanel(
       'argusSession',
-      `Argus: ${(sessionData.aiTitle || sessionData.prompt).substring(0, 30)}...`,
+      `${(sessionData.aiTitle || sessionData.prompt).substring(0, 30)}...`,
       this.getViewColumn(),
       {
         enableScripts: true,
