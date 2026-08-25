@@ -16,6 +16,9 @@ interface Props {
   // Patterns from settings (argus.steps.autoExpand) — steps whose tool name or
   // type matches start expanded instead of collapsed.
   autoExpand?: string[];
+  // How many steps survive the current search/filters, reported up so the tab
+  // header can show "Steps (13/55)". null while the tab is unmounted.
+  onFilteredCountChange?: (count: number | null) => void;
 }
 
 /* ── SVG icons ── */
@@ -244,7 +247,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [] }: Props) => {
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], onFilteredCountChange }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -530,6 +533,14 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     return result;
   }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents, agentChain]);
 
+  // Publish the filtered count for the tab header. Filters live only as long as
+  // this component, so unmounting resets the header back to the plain total.
+  useEffect(() => {
+    onFilteredCountChange?.(filteredSteps.length);
+  }, [filteredSteps.length, onFilteredCountChange]);
+
+  useEffect(() => () => onFilteredCountChange?.(null), [onFilteredCountChange]);
+
   // Calculate duration for each step (time to next step)
   const stepDurations = useMemo(() => {
     const durations = new Map<number, number>();
@@ -672,10 +683,6 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
               </button>
             </>
           )}
-        </div>
-
-        <div className="steps-filter-meta">
-          <span className="steps-count">Showing {filteredSteps.length} / {steps.length}</span>
         </div>
       </div>
 

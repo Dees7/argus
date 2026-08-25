@@ -25,6 +25,9 @@ function App() {
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
   const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
   const [idCopied, setIdCopied] = useState(false);
+  // Steps left after the Steps tab's own search/filters; null when that tab is
+  // closed, in which case the header shows the plain total.
+  const [stepsFilteredCount, setStepsFilteredCount] = useState<number | null>(null);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -60,6 +63,12 @@ function App() {
     () => (session ? flattenSessionSteps(session) : []),
     [session]
   );
+
+  // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
+  const stepsTabLabel =
+    stepsFilteredCount !== null && stepsFilteredCount !== flatSteps.length
+      ? `${stepsFilteredCount}/${flatSteps.length}`
+      : `${flatSteps.length}`;
 
   if (loading) {
     return (
@@ -170,7 +179,7 @@ function App() {
           className={`tab ${activeTab === 'steps' ? 'active' : ''}`}
           onClick={() => setActiveTab('steps')}
         >
-          Steps ({flatSteps.length})
+          Steps ({stepsTabLabel})
         </button>
         <button
           className={`tab ${activeTab === 'analysis' ? 'active' : ''}`}
@@ -225,6 +234,7 @@ function App() {
             highlightStep={highlightStep}
             defaultSortMode={stepsSortOrder}
             autoExpand={stepsAutoExpand}
+            onFilteredCountChange={setStepsFilteredCount}
           />
         )}
         {activeTab === 'analysis' && (
