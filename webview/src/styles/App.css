@@ -26,6 +26,41 @@
   color: var(--text);
 }
 
+.detail-session-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  user-select: text;
+}
+
+.detail-session-id .copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.detail-session-id .copy-btn:hover {
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  opacity: 1;
+}
+
+.detail-session-id .copy-btn.copied {
+  color: #22c55e;
+  opacity: 1;
+}
+
 .meta-badge {
   padding: 2px 8px;
   background: var(--bg-panel);

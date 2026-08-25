@@ -24,6 +24,7 @@ function App() {
   const [mapCwd, setMapCwd] = useState<string>('');
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
+  const [idCopied, setIdCopied] = useState(false);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -101,6 +102,18 @@ function App() {
     return model;
   };
 
+  // The extension host owns the clipboard in a webview; navigator.clipboard is
+  // only the fallback for running the UI outside VS Code (vite dev server).
+  const copySessionId = (id: string) => {
+    if (window.vscodeApi) {
+      window.vscodeApi.postMessage({ type: 'copyToClipboard', text: id });
+    } else {
+      navigator.clipboard?.writeText(id);
+    }
+    setIdCopied(true);
+    setTimeout(() => setIdCopied(false), 1500);
+  };
+
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
@@ -123,6 +136,20 @@ function App() {
             {session.subagents.length > 0 && ` · ${session.subagents.length} agents`}
           </span>
           {isLive && <span className="live-badge"><span className="live-dot"></span>LIVE</span>}
+        </div>
+        <div className="detail-session-id">
+          <span title="Session ID">{session.sessionId}</span>
+          <button
+            className={`copy-btn ${idCopied ? 'copied' : ''}`}
+            onClick={() => copySessionId(session.sessionId)}
+            title={idCopied ? 'Copied!' : 'Copy session ID'}
+            aria-label="Copy session ID"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="5.75" y="5.75" width="8.5" height="8.5" rx="1.5" />
+              <path d="M10.5 3.25v-.5A1 1 0 0 0 9.5 1.75h-6.75A1 1 0 0 0 1.75 2.75V9.5a1 1 0 0 0 1 1h.5" />
+            </svg>
+          </button>
         </div>
       </div>
 

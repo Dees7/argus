@@ -89,6 +89,11 @@ export class SessionWebviewProviderReact {
             panel.webview.postMessage({ type: 'liveMode', active: true });
             this.sendDirectoryTree(panel, sessionData.project);
             break;
+          case 'copyToClipboard':
+            if (typeof message.text === 'string' && message.text) {
+              await vscode.env.clipboard.writeText(message.text);
+            }
+            break;
         }
       },
       undefined,
