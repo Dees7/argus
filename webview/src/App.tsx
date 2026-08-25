@@ -132,20 +132,20 @@ function App() {
             {flatSteps.length} steps
             {session.subagents.length > 0 && ` · ${session.subagents.length} agents`}
           </span>
-        </div>
-        <div className="detail-session-id">
-          <span title="Session ID">{session.sessionId}</span>
-          <button
-            className={`copy-btn ${idCopied ? 'copied' : ''}`}
-            onClick={() => copySessionId(session.sessionId)}
-            title={idCopied ? 'Copied!' : 'Copy session ID'}
-            aria-label="Copy session ID"
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="5.75" y="5.75" width="8.5" height="8.5" rx="1.5" />
-              <path d="M10.5 3.25v-.5A1 1 0 0 0 9.5 1.75h-6.75A1 1 0 0 0 1.75 2.75V9.5a1 1 0 0 0 1 1h.5" />
-            </svg>
-          </button>
+          <span className="detail-session-id">
+            <span title="Session ID">{session.sessionId}</span>
+            <button
+              className={`copy-btn ${idCopied ? 'copied' : ''}`}
+              onClick={() => copySessionId(session.sessionId)}
+              title={idCopied ? 'Copied!' : 'Copy session ID'}
+              aria-label="Copy session ID"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="5.75" y="5.75" width="8.5" height="8.5" rx="1.5" />
+                <path d="M10.5 3.25v-.5A1 1 0 0 0 9.5 1.75h-6.75A1 1 0 0 0 1.75 2.75V9.5a1 1 0 0 0 1 1h.5" />
+              </svg>
+            </button>
+          </span>
         </div>
       </div>
 
