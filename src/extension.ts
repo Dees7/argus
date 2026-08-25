@@ -39,12 +39,14 @@ export function activate(context: vscode.ExtensionContext) {
   function applyFilters(sessions: SessionSummary[]): SessionSummary[] {
     let result = sessions;
 
-    // Text search
+    // Text search. Session ids are matched too so a UUID pasted from a log or
+    // a transcript path resolves to its session.
     const q = filterState.searchQuery.toLowerCase().trim();
     if (q) {
       result = result.filter(s =>
         s.prompt.toLowerCase().includes(q) ||
-        s.project.toLowerCase().includes(q)
+        s.project.toLowerCase().includes(q) ||
+        s.sessionId.toLowerCase().includes(q)
       );
     }
 
