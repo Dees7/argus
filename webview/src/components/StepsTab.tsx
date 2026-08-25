@@ -370,10 +370,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
           return next;
         });
       }
+      // Align the step's top edge with the top of the scroll area rather than
+      // centring it — an expanded step (a compaction summary especially) can be
+      // taller than the viewport, and centring would land mid-text.
       setTimeout(() => {
         const element = document.querySelector('.step-item.highlight');
         if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
     }
