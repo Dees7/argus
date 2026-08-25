@@ -24,6 +24,7 @@ function App() {
   const [mapCwd, setMapCwd] = useState<string>('');
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
+  const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
   const [idCopied, setIdCopied] = useState(false);
 
   useEffect(() => {
@@ -38,6 +39,9 @@ function App() {
       } else if (message.type === 'config') {
         if (message.data?.stepsSortOrder) {
           setStepsSortOrder(message.data.stepsSortOrder);
+        }
+        if (Array.isArray(message.data?.stepsAutoExpand)) {
+          setStepsAutoExpand(message.data.stepsAutoExpand);
         }
       } else if (message.type === 'liveMode') {
         setIsLive(message.active);
@@ -212,6 +216,7 @@ function App() {
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}
             defaultSortMode={stepsSortOrder}
+            autoExpand={stepsAutoExpand}
           />
         )}
         {activeTab === 'analysis' && (

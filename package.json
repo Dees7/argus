@@ -259,6 +259,28 @@
             "Cheapest step first"
           ],
           "description": "Default sort order for the Steps tab of a session. Applied when a session is opened; changing the sort inside a session is temporary."
+        },
+        "argus.steps.autoExpand": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Step types that open expanded in the Steps tab, so their output is visible without clicking. Matched case-insensitively against the tool name (`Read`, `Bash`, `Edit`, …) or step type (`text`, `thinking`), with `*` as a wildcard: `*` expands everything, `mcp*` every MCP tool, `mcp_chromium*` one MCP server (repeated `_` are treated as one, so `mcp_chromium*` also matches `mcp__chromium__navigate`). Clicking a step still toggles it.",
+          "examples": [
+            [
+              "text",
+              "thinking"
+            ],
+            [
+              "Read",
+              "Bash",
+              "mcp*"
+            ],
+            [
+              "*"
+            ]
+          ]
         }
       }
     }

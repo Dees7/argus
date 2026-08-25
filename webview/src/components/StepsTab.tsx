@@ -13,6 +13,9 @@ interface Props {
   // Sort order from settings (argus.steps.sortOrder); also what "Clear
   // filters" resets to. Defaults to 'newest' for callers without a config.
   defaultSortMode?: string;
+  // Patterns from settings (argus.steps.autoExpand) — steps whose tool name or
+  // type matches start expanded instead of collapsed.
+  autoExpand?: string[];
 }
 
 /* ── SVG icons ── */
@@ -202,14 +205,38 @@ const SORT_LABELS: Record<string, string> = {
   'cost-asc': 'Cost ↑',
 };
 
+/* ── auto-expand patterns ── */
+// MCP tools arrive as `mcp__server__tool`; collapsing underscore runs lets a
+// pattern be written either way (`mcp_chromium*` or `mcp__chromium*`).
+const normalizeToolKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/_+/g, '_');
+
+// Compiles argus.steps.autoExpand into a single predicate. `*` is the only
+// wildcard; everything else is matched literally over the whole name.
+const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
+  const regexes = patterns
+    .map(normalizeToolKey)
+    .filter(Boolean)
+    .map(p => new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\]/g, m => (m === '*' ? '.*' : `\\${m}`))}$`));
+  if (regexes.length === 0) return () => false;
+  return (key: string) => {
+    const k = normalizeToolKey(key);
+    return regexes.some(re => re.test(k));
+  };
+};
+
 /* ── Main component ── */
 // In a flattened (main + sub-agent) timeline, every step has a unique
 // globalIndex. We fall back to the local index for legacy callers that may
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest' }: Props) => {
-  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [] }: Props) => {
+  // Steps the user has clicked, i.e. the ones whose state differs from the
+  // default that autoExpand gives them. Storing the flips rather than the
+  // expanded set means steps appended by a live session pick the setting up
+  // on arrival, and a changed setting doesn't strand stale expansions.
+  const [toggledSteps, setToggledSteps] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
@@ -229,6 +256,18 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     sortTouched.current = true;
     setSortMode(mode);
   }, []);
+
+  const matchesAutoExpand = useMemo(() => compileAutoExpand(autoExpand), [autoExpand]);
+
+  const isAutoExpanded = useCallback(
+    (step: Step) => matchesAutoExpand(step.toolName || step.type),
+    [matchesAutoExpand]
+  );
+
+  const isStepExpanded = useCallback(
+    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(keyOf(step)),
+    [isAutoExpanded, toggledSteps]
+  );
 
   // agentId → Subagent for quick lookup
   const subagentById = useMemo(() => {
@@ -302,12 +341,15 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
   // out of the rendered list.
   useEffect(() => {
     if (highlightStep !== null) {
-      setExpandedSteps(prev => {
-        const newSet = new Set(prev);
-        newSet.add(highlightStep);
-        return newSet;
-      });
       const target = steps.find(s => keyOf(s) === highlightStep);
+      // Force the step open: drop the flip if it is auto-expanded already,
+      // add one otherwise.
+      setToggledSteps(prev => {
+        const next = new Set(prev);
+        if (target && isAutoExpanded(target)) next.delete(highlightStep);
+        else next.add(highlightStep);
+        return next;
+      });
       if (target?.agentId && collapsedAgents.has(target.agentId)) {
         setCollapsedAgents(prev => {
           const next = new Set(prev);
@@ -322,16 +364,18 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
         }
       }, 100);
     }
-  }, [highlightStep, steps, collapsedAgents]);
+  }, [highlightStep, steps, collapsedAgents, isAutoExpanded]);
 
   const toggleStep = (index: number) => {
-    const newSet = new Set(expandedSteps);
-    if (newSet.has(index)) {
-      newSet.delete(index);
-    } else {
-      newSet.add(index);
-    }
-    setExpandedSteps(newSet);
+    setToggledSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
   };
 
   // Map findings to globalIndex of the matching main-session steps. The
@@ -620,7 +664,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
         {filteredSteps.map((step, i) => {
           const k = keyOf(step);
-          const isExpanded = expandedSteps.has(k);
+          const isExpanded = isStepExpanded(step);
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
           const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;

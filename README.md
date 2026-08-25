@@ -180,7 +180,8 @@ Argus exposes the following VS Code settings:
 ```json
 {
   "argus.scanDepth": 5,
-  "argus.language": "en"
+  "argus.language": "en",
+  "argus.steps.autoExpand": ["text", "thinking", "mcp*"]
 }
 ```
 
@@ -188,6 +189,19 @@ Argus exposes the following VS Code settings:
 | --- | --- | --- |
 | `argus.scanDepth` | `5` | Maximum directory depth when scanning `.claude` directories |
 | `argus.language` | `"en"` | UI / findings language — `"en"` or `"tr"` |
+| `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
+| `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
+| `argus.steps.autoExpand` | `[]` | Step types that render expanded in the Steps tab |
+
+### Auto-expanding steps
+
+`argus.steps.autoExpand` takes a list of patterns matched against a step's tool
+name (`Read`, `Bash`, `Edit`, …) or type (`text`, `thinking`). Matching is
+case-insensitive and `*` is a wildcard, so `["*"]` expands every step,
+`["mcp*"]` every MCP tool call, and `["mcp_chromium*"]` a single MCP server —
+repeated underscores collapse, so that last pattern also matches
+`mcp__chromium__navigate`. Steps stay clickable: expanding or collapsing one by
+hand always wins over the setting. Changes apply to already-open sessions.
 
 ## Architecture
 
