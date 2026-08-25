@@ -3,11 +3,14 @@ import * as path from 'path';
 import { SessionSummary } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 import { ParserService } from './parserService';
+import { SearchTarget } from './searchService';
 
 export interface DiscoveredSession {
   sessionId: string;
   filePath: string;
   projectDir: string;
+  /** Sub-agent transcripts spawned by this session, if any. */
+  subagentFiles: string[];
   project: string;
   model: string;
   prompt: string;
@@ -25,6 +28,7 @@ interface SessionFileInfo {
   sessionId: string;
   filePath: string;
   projectDir: string;
+  subagentFiles: string[];
 }
 
 export class DiscoveryService {
@@ -75,6 +79,7 @@ export class DiscoveryService {
             sessionId,
             filePath: path.join(projDir, file.name),
             projectDir: projDir,
+            subagentFiles: this.listSubagentFiles(projDir, sessionId),
           });
         }
       }
@@ -170,6 +175,21 @@ export class DiscoveryService {
   }
 
   /**
+   * Every discovered session paired with the transcript files that make it up,
+   * for full-text search.
+   */
+  getSearchTargets(): SearchTarget[] {
+    const targets: SearchTarget[] = [];
+    for (const ds of this.sessionIndex.values()) {
+      targets.push({
+        sessionId: ds.sessionId,
+        files: [ds.filePath, ...ds.subagentFiles],
+      });
+    }
+    return targets;
+  }
+
+  /**
    * Refresh discovery cache
    */
   async refreshDiscovery(): Promise<void> {
@@ -192,6 +212,23 @@ export class DiscoveryService {
   }
 
   // Helper methods
+
+  /**
+   * Sub-agent transcripts live in `<projectDir>/<sessionId>/subagents/*.jsonl`.
+   * They carry no session file of their own, so full-text search has to reach
+   * them through their parent session.
+   */
+  private listSubagentFiles(projDir: string, sessionId: string): string[] {
+    const dir = path.join(projDir, sessionId, 'subagents');
+    try {
+      return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter(e => e.isFile() && e.name.endsWith('.jsonl'))
+        .map(e => path.join(dir, e.name));
+    } catch {
+      return [];
+    }
+  }
 
   private hasProjectsDir(claudeDir: string): boolean {
     try {
@@ -232,6 +269,7 @@ export class DiscoveryService {
       sessionId: info.sessionId,
       filePath: info.filePath,
       projectDir: info.projectDir,
+      subagentFiles: info.subagentFiles,
       project: '',
       model: metadata.model || 'unknown',
       prompt: '',

@@ -13,6 +13,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
   constructor(
     extensionPath: string,
     private readonly _onSearch: (query: string) => void,
+    private readonly _onSearchScope: (searchAllContent: boolean) => void,
     private readonly _onOpenSession: (sessionId: string) => void,
     private readonly _onModelFilter: (model: string) => void,
     private readonly _onDateFilter: (preset: string, from?: number, to?: number) => void
@@ -42,6 +43,9 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       switch (message.type) {
         case 'search':
           this._onSearch(message.query);
+          break;
+        case 'searchScope':
+          this._onSearchScope(!!message.all);
           break;
         case 'openSession':
           this._onOpenSession(message.sessionId);
@@ -81,6 +85,11 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     this._view?.webview.postMessage({ type: 'clearSearch' });
     this._view?.webview.postMessage({ type: 'clearModelFilter' });
     this._view?.webview.postMessage({ type: 'clearDateFilter' });
+  }
+
+  /** Show/hide the spinner while a full-text scan is running. */
+  setSearching(value: boolean): void {
+    this._view?.webview.postMessage({ type: 'searching', value });
   }
 
   private getHtml(webview: vscode.Webview): string {
@@ -131,6 +140,19 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     height: 14px;
   }
   .search-icon svg { display: block; }
+  .search-wrap.searching .search-icon svg { display: none; }
+  .search-wrap.searching .search-icon::after {
+    content: '';
+    display: block;
+    width: 11px;
+    height: 11px;
+    margin: 1px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   input {
     width: 100%;
     padding: 4px 6px;
@@ -157,6 +179,28 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
   }
   .clear-btn:hover { color: var(--vscode-input-foreground); }
   .clear-btn.visible { display: block; }
+
+  /* Full-text scope toggle */
+  .scope-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--vscode-input-placeholderForeground);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 12px;
+    height: 18px;
+    min-width: 18px;
+    padding: 0 3px 4px;
+    flex-shrink: 0;
+  }
+  .scope-btn:hover { color: var(--vscode-input-foreground); }
+  .scope-btn.active {
+    color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+    background: var(--vscode-inputOption-activeBackground, rgba(100,150,255,0.2));
+    border-color: var(--vscode-inputOption-activeBorder, transparent);
+  }
 
   .divider {
     width: 1px;
@@ -575,6 +619,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       </span>
       <input type="text" id="search" placeholder="Search title, project or id..." spellcheck="false">
       <button class="clear-btn" id="clearBtn">&times;</button>
+      <button class="scope-btn" id="scopeBtn" title="Search inside transcripts too (slower)">&lowast;</button>
       <span class="divider"></span>
       <div class="dropdown" id="modelDropdown">
         <button class="dropdown-trigger" id="modelTrigger">
@@ -685,6 +730,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const vscode = acquireVsCodeApi();
     const input = document.getElementById('search');
     const clearBtn = document.getElementById('clearBtn');
+    const scopeBtn = document.getElementById('scopeBtn');
+    const searchWrap = document.querySelector('.search-wrap');
     const listEl = document.getElementById('list');
     const LIVE_ICON = '${liveIconUri}';
     const SESSION_ICON = '${sessionIconUri}';
@@ -949,19 +996,34 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     let collapsedGroups = new Set();
     let debounceTimer;
 
-    // Search input
+    // Search input. Scanning transcript contents is far more expensive than
+    // filtering titles, so that mode waits longer before firing.
+    let searchAllContent = false;
+
     input.addEventListener('input', () => {
       clearTimeout(debounceTimer);
       clearBtn.classList.toggle('visible', input.value.length > 0);
       debounceTimer = setTimeout(() => {
         vscode.postMessage({ type: 'search', query: input.value });
-      }, 250);
+      }, searchAllContent ? 500 : 250);
     });
 
     clearBtn.addEventListener('click', () => {
+      clearTimeout(debounceTimer);
       input.value = '';
       clearBtn.classList.remove('visible');
       vscode.postMessage({ type: 'search', query: '' });
+      input.focus();
+    });
+
+    scopeBtn.addEventListener('click', () => {
+      searchAllContent = !searchAllContent;
+      scopeBtn.classList.toggle('active', searchAllContent);
+      // Flush any pending keystrokes first so the scan runs against what the
+      // box actually shows, not the last debounced value.
+      clearTimeout(debounceTimer);
+      vscode.postMessage({ type: 'search', query: input.value });
+      vscode.postMessage({ type: 'searchScope', all: searchAllContent });
       input.focus();
     });
 
@@ -973,8 +1035,13 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         filterState = msg.filterState;
         render();
       } else if (msg.type === 'clearSearch') {
+        clearTimeout(debounceTimer);
         input.value = '';
         clearBtn.classList.remove('visible');
+        searchAllContent = false;
+        scopeBtn.classList.remove('active');
+      } else if (msg.type === 'searching') {
+        searchWrap.classList.toggle('searching', !!msg.value);
       } else if (msg.type === 'clearModelFilter') {
         selectedModel = '';
         modelLabel.textContent = 'All';

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { DiscoveryService } from './services/discoveryService';
 import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
+import { SearchService } from './services/searchService';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
@@ -14,6 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
   const discoveryService = new DiscoveryService();
   const parserService = new ParserService();
   const analyzerService = new AnalyzerService();
+  const searchService = new SearchService();
 
   // Initialize providers
   const webviewProvider = new SessionWebviewProviderReact(
@@ -26,6 +28,11 @@ export function activate(context: vscode.ExtensionContext) {
   // Filter state
   let filterState: FilterState = { ...DEFAULT_FILTER_STATE };
   let allSessions: SessionSummary[] = [];
+
+  // Ids matching the current full-text query. `null` means no full-text filter
+  // is in effect (the toggle is off, or the query is empty).
+  let contentMatches: Set<string> | null = null;
+  let searchGeneration = 0;
 
   // --- Filtering logic ---
 
@@ -40,13 +47,15 @@ export function activate(context: vscode.ExtensionContext) {
     let result = sessions;
 
     // Text search. Session ids are matched too so a UUID pasted from a log or
-    // a transcript path resolves to its session.
+    // a transcript path resolves to its session. With the "*" toggle on,
+    // transcript contents count as a match as well.
     const q = filterState.searchQuery.toLowerCase().trim();
     if (q) {
       result = result.filter(s =>
         s.prompt.toLowerCase().includes(q) ||
         s.project.toLowerCase().includes(q) ||
-        s.sessionId.toLowerCase().includes(q)
+        s.sessionId.toLowerCase().includes(q) ||
+        (contentMatches !== null && contentMatches.has(s.sessionId))
       );
     }
 
@@ -91,6 +100,49 @@ export function activate(context: vscode.ExtensionContext) {
     listViewProvider.updateSessions(filtered, filterState);
   }
 
+  /**
+   * Re-run the full-text scan for the current query. Scanning every transcript
+   * takes a moment, so the previous result stays on screen (with the spinner
+   * up) instead of blanking the list, and a scan superseded by newer input is
+   * dropped rather than rendered.
+   */
+  async function runContentSearch() {
+    const query = filterState.searchQuery.trim();
+
+    if (!filterState.searchAllContent || !query) {
+      searchService.cancel();
+      listViewProvider.setSearching(false);
+      if (contentMatches !== null) {
+        contentMatches = null;
+        refreshList();
+      }
+      return;
+    }
+
+    const gen = ++searchGeneration;
+    listViewProvider.setSearching(true);
+
+    try {
+      if (discoveryService.getSearchTargets().length === 0) {
+        await ensureSessions();
+      }
+
+      const matches = await searchService.search(query, discoveryService.getSearchTargets());
+      if (matches === null || gen !== searchGeneration) {
+        return; // Superseded by a newer query.
+      }
+
+      contentMatches = matches;
+      refreshList();
+    } catch (error) {
+      console.error('Full-text search failed:', error);
+    } finally {
+      if (gen === searchGeneration) {
+        listViewProvider.setSearching(false);
+      }
+    }
+  }
+
   // Coalesce concurrent discovery requests so the view-open path and the
   // activation path don't both walk ~/.claude at the same time.
   let discoveryPromise: Promise<void> | null = null;
@@ -102,6 +154,7 @@ export function activate(context: vscode.ExtensionContext) {
     discoveryPromise = (async () => {
       try {
         await discoveryService.refreshDiscovery();
+        searchService.invalidate();
         allSessions = await discoveryService.getSessionList();
         refreshList();
       } finally {
@@ -164,6 +217,11 @@ export function activate(context: vscode.ExtensionContext) {
       filterState.searchQuery = query;
       syncContextKeys();
       refreshList();
+      void runContentSearch();
+    },
+    (all) => {
+      filterState.searchAllContent = all;
+      void runContentSearch();
     },
     (sessionId) => {
       vscode.commands.executeCommand('argus.openSessionDetail', sessionId);
@@ -206,8 +264,10 @@ export function activate(context: vscode.ExtensionContext) {
         async () => {
           try {
             await discoveryService.refreshDiscovery();
+            searchService.invalidate();
             allSessions = await discoveryService.getSessionList();
             refreshList();
+            await runContentSearch();
             vscode.window.showInformationMessage(`Sessions refreshed (${allSessions.length} found)`);
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
@@ -233,7 +293,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.clearFilters', () => {
       filterState = { ...DEFAULT_FILTER_STATE };
+      searchService.cancel();
+      contentMatches = null;
       listViewProvider.clearSearch();
+      listViewProvider.setSearching(false);
       syncContextKeys();
       refreshList();
     })

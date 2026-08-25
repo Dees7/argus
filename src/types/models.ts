@@ -5,6 +5,11 @@ export type DatePreset = 'all' | '1h' | '24h' | '7d' | '30d' | 'custom';
 
 export interface FilterState {
   searchQuery: string;
+  /**
+   * Match the query against full transcript contents instead of just the
+   * session title, project and id. Session-scoped only — never persisted.
+   */
+  searchAllContent: boolean;
   selectedModels: string[];
   datePreset: DatePreset;
   customDateFrom?: number;
@@ -14,6 +19,7 @@ export interface FilterState {
 
 export const DEFAULT_FILTER_STATE: FilterState = {
   searchQuery: '',
+  searchAllContent: false,
   selectedModels: [],
   datePreset: 'all',
   groupMode: 'none',
