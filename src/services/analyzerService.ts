@@ -546,7 +546,10 @@ class CompactionDetectedRule implements AnalysisRule {
       findings.push({
         rule: 'compaction_detected',
         severity: 'info',
-        title: `Context Compaction at Step ${compaction.stepIndex}`,
+        // No step number in the title: `steps` here are session-local indices,
+        // while the UI renders globalIndex (which differs once subagent steps
+        // are interleaved). The affected-step link below carries the right one.
+        title: 'Context Compaction',
         description: `Detected ${compaction.dropTokens.toLocaleString()} token drop (${(compaction.dropPct * 100).toFixed(0)}%). ${rereadSteps.length} files re-read after compaction.`,
         steps: allSteps,
         wastedCost: rereadCost,
