@@ -15,6 +15,12 @@ export interface FilterState {
   customDateFrom?: number;
   customDateTo?: number;
   groupMode: GroupMode;
+  /**
+   * Keep only sessions whose working directory belongs to a folder of the
+   * open workspace. Persisted in the extension's global state, so the choice
+   * follows the user across windows and workspaces.
+   */
+  onlyCurrentProject: boolean;
 }
 
 export const DEFAULT_FILTER_STATE: FilterState = {
@@ -23,6 +29,7 @@ export const DEFAULT_FILTER_STATE: FilterState = {
   selectedModels: [],
   datePreset: 'all',
   groupMode: 'none',
+  onlyCurrentProject: false,
 };
 
 // Core data models ported from Go
@@ -38,6 +45,11 @@ export interface SessionSummary {
   sessionId: string;
   prompt: string;
   project: string;
+  /**
+   * Absolute working directory the session ran in, when it can be recovered
+   * from history or the transcript. Empty when only the display name is known.
+   */
+  projectPath: string;
   model: string;
   timestamp: Date;
   lastModified: Date;

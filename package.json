@@ -181,6 +181,18 @@
         "command": "argus.setGroupModel",
         "title": "Group by Model",
         "category": "Argus"
+      },
+      {
+        "command": "argus.filterCurrentProjectOn",
+        "title": "Show Only Current Project",
+        "icon": "$(filter)",
+        "category": "Argus"
+      },
+      {
+        "command": "argus.filterCurrentProjectOff",
+        "title": "Show Sessions From All Projects",
+        "icon": "$(filter-filled)",
+        "category": "Argus"
       }
     ],
     "submenus": [
@@ -198,14 +210,24 @@
           "group": "navigation@1"
         },
         {
+          "command": "argus.filterCurrentProjectOn",
+          "when": "view == argusSessionList && !argus.filter.currentProject",
+          "group": "navigation@2"
+        },
+        {
+          "command": "argus.filterCurrentProjectOff",
+          "when": "view == argusSessionList && argus.filter.currentProject",
+          "group": "navigation@2"
+        },
+        {
           "command": "argus.clearFilters",
           "when": "view == argusSessionList && argus.hasActiveFilters",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "argus.refreshSessions",
           "when": "view == argusSessionList",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ],
       "argus.groupMenu": [

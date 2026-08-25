@@ -25,8 +25,14 @@ export function activate(context: vscode.ExtensionContext) {
     analyzerService
   );
 
-  // Filter state
-  let filterState: FilterState = { ...DEFAULT_FILTER_STATE };
+  // Filter state. The "current project only" toggle is remembered in the
+  // extension's global state (VS Code's own storage, not any file in the
+  // workspace), so it survives reloads and applies in every window.
+  const PROJECT_FILTER_KEY = 'argus.filter.onlyCurrentProject';
+  let filterState: FilterState = {
+    ...DEFAULT_FILTER_STATE,
+    onlyCurrentProject: context.globalState.get<boolean>(PROJECT_FILTER_KEY, false),
+  };
   let allSessions: SessionSummary[] = [];
 
   // Ids matching the current full-text query. `null` means no full-text filter
@@ -43,8 +49,39 @@ export function activate(context: vscode.ExtensionContext) {
     return 'unknown';
   }
 
+  /** Last two segments of a path — the shape `SessionSummary.project` uses. */
+  function humanProjectName(pathStr: string): string {
+    const parts = pathStr.split(path.sep).filter(p => p);
+    if (parts.length === 0) {
+      return pathStr;
+    }
+    return parts.slice(-2).join('/');
+  }
+
+  /**
+   * True when the session ran inside one of the open workspace folders. Older
+   * sessions may have no recorded cwd; those fall back to matching the display
+   * name, which is all the discovery step could recover for them.
+   */
+  function isCurrentProject(s: SessionSummary, folders: string[]): boolean {
+    if (s.projectPath) {
+      const p = path.normalize(s.projectPath);
+      return folders.some(f => p === f || p.startsWith(f + path.sep));
+    }
+    return folders.some(f => s.project === humanProjectName(f));
+  }
+
   function applyFilters(sessions: SessionSummary[]): SessionSummary[] {
     let result = sessions;
+
+    // Current-project filter. With no folder open there is no "current
+    // project" to compare against, so the toggle simply has no effect.
+    const folders = (vscode.workspace.workspaceFolders ?? []).map(f =>
+      path.normalize(f.uri.fsPath)
+    );
+    if (filterState.onlyCurrentProject && folders.length > 0) {
+      result = result.filter(s => isCurrentProject(s, folders));
+    }
 
     // Text search. Session ids are matched too so a UUID pasted from a log or
     // a transcript path resolves to its session. With the "*" toggle on,
@@ -177,6 +214,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('setContext', 'argus.filter.haiku', models.includes('haiku'));
     vscode.commands.executeCommand('setContext', 'argus.filter.date', filterState.datePreset);
     vscode.commands.executeCommand('setContext', 'argus.group', filterState.groupMode);
+    vscode.commands.executeCommand(
+      'setContext',
+      'argus.filter.currentProject',
+      filterState.onlyCurrentProject
+    );
 
     const hasActive =
       filterState.searchQuery !== '' ||
@@ -317,7 +359,12 @@ export function activate(context: vscode.ExtensionContext) {
   // Clear filters
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.clearFilters', () => {
-      filterState = { ...DEFAULT_FILTER_STATE };
+      // The project toggle is a persisted preference with its own button, not
+      // part of the ad-hoc filter set this command clears.
+      filterState = {
+        ...DEFAULT_FILTER_STATE,
+        onlyCurrentProject: filterState.onlyCurrentProject,
+      };
       searchService.cancel();
       contentMatches = null;
       listViewProvider.clearSearch();
@@ -355,6 +402,29 @@ export function activate(context: vscode.ExtensionContext) {
         syncContextKeys();
         refreshList();
       });
+    })
+  );
+
+  // Current-project filter. Both ids run the same toggle; they exist only so
+  // the title bar can show a filled icon while the filter is on.
+  function toggleProjectFilter() {
+    filterState.onlyCurrentProject = !filterState.onlyCurrentProject;
+    void context.globalState.update(PROJECT_FILTER_KEY, filterState.onlyCurrentProject);
+    syncContextKeys();
+    refreshList();
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('argus.filterCurrentProjectOn', toggleProjectFilter),
+    vscode.commands.registerCommand('argus.filterCurrentProjectOff', toggleProjectFilter)
+  );
+
+  // Opening or closing a folder changes what "current project" means.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      if (filterState.onlyCurrentProject) {
+        refreshList();
+      }
     })
   );
 

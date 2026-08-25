@@ -12,6 +12,8 @@ export interface DiscoveredSession {
   /** Sub-agent transcripts spawned by this session, if any. */
   subagentFiles: string[];
   project: string;
+  /** Absolute cwd of the session, when known ('' otherwise). */
+  projectPath: string;
   model: string;
   prompt: string;
   timestamp: Date;
@@ -147,6 +149,7 @@ export class DiscoveryService {
         sessionId: ds.sessionId,
         prompt: ds.prompt,
         project: ds.project,
+        projectPath: ds.projectPath,
         model: ds.model,
         timestamp: ds.timestamp,
         lastModified: ds.lastModified,
@@ -271,6 +274,7 @@ export class DiscoveryService {
       projectDir: info.projectDir,
       subagentFiles: info.subagentFiles,
       project: '',
+      projectPath: metadata.cwd || '',
       model: metadata.model || 'unknown',
       prompt: '',
       timestamp: new Date(),
@@ -293,6 +297,9 @@ export class DiscoveryService {
       ds.prompt = historyEntry.display || metadata.prompt;
       if (historyEntry.project) {
         ds.project = this.humanProjectName(historyEntry.project);
+        // History records the absolute cwd; prefer it over the transcript's,
+        // which is only present when the file carries a `cwd` field.
+        ds.projectPath = historyEntry.project;
       }
       ds.timestamp = new Date(historyEntry.timestamp);
     } else {
