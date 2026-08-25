@@ -461,14 +461,27 @@
   padding: 10px 12px;
   font-family: var(--font-code), monospace;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: none;
 }
 
+/* Terminal-like: green on the dark block, no highlight behind the text.
+   The reset on the nested <code> keeps inline-code styling (tinted
+   background, string colour) from leaking in from elsewhere. */
 .tr-bash-stdout {
-  color: var(--text);
+  color: var(--vscode-terminal-ansiGreen, #4EC9B0);
+  background: transparent;
+}
+
+.tr-bash-stdout code,
+.tr-bash-stderr code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
 }
 
 .tr-bash-stderr {
