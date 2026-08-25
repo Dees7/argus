@@ -283,6 +283,16 @@
           "default": true,
           "description": "Show the model selector next to the search box in the Sessions view. When turned off the selector is hidden and any active model filter is cleared."
         },
+        "argus.sessionList.showModel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the model name in the subtitle of each session in the Sessions view."
+        },
+        "argus.sessionList.showProject": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the project name in the subtitle of each session in the Sessions view."
+        },
         "argus.steps.sortOrder": {
           "type": "string",
           "default": "newest",

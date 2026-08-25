@@ -383,6 +383,23 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Model / project in the subtitle of each session item.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        !e.affectsConfiguration('argus.sessionList.showModel') &&
+        !e.affectsConfiguration('argus.sessionList.showProject')
+      ) {
+        return;
+      }
+      const cfg = vscode.workspace.getConfiguration('argus');
+      listViewProvider.setSessionMetaVisible(
+        cfg.get<boolean>('sessionList.showModel', true),
+        cfg.get<boolean>('sessionList.showProject', true)
+      );
+    })
+  );
+
   // --- Commands ---
 
   context.subscriptions.push(

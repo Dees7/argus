@@ -113,6 +113,15 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     this._view?.webview.postMessage({ type: 'showModelSelector', value });
   }
 
+  /**
+   * Apply a change of `argus.sessionList.showModel` / `.showProject` without a
+   * reload. Only the subtitle of each item changes, so the list re-renders in
+   * place and keeps its scroll position and collapsed groups.
+   */
+  setSessionMetaVisible(showModel: boolean, showProject: boolean): void {
+    this._view?.webview.postMessage({ type: 'sessionMeta', showModel, showProject });
+  }
+
   /** Show/hide the spinner while a full-text scan is running. */
   setSearching(value: boolean): void {
     this._view?.webview.postMessage({ type: 'searching', value });
@@ -129,6 +138,12 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       .getConfiguration('argus')
       .get<boolean>('searchBar.showModelSelector', true);
     const modelHidden = showModelSelector ? '' : ' hidden';
+    const showModel = vscode.workspace
+      .getConfiguration('argus')
+      .get<boolean>('sessionList.showModel', true);
+    const showProject = vscode.workspace
+      .getConfiguration('argus')
+      .get<boolean>('sessionList.showProject', true);
 
     return `<!DOCTYPE html>
 <html>
@@ -1069,6 +1084,8 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     let sessions = [];
     let filterState = {};
+    let showModel = ${showModel};
+    let showProject = ${showProject};
     let collapsedGroups = new Set();
     let debounceTimer;
 
@@ -1136,6 +1153,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
           modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
           modelMenu.querySelector('.dropdown-item[data-value=""]').classList.add('selected');
         }
+      } else if (msg.type === 'sessionMeta') {
+        showModel = !!msg.showModel;
+        showProject = !!msg.showProject;
+        render();
       } else if (msg.type === 'clearDateFilter') {
         selectedDate = 'all';
         dateLabel.textContent = 'All';
@@ -1194,8 +1215,11 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     function renderSessionItem(s, grouped) {
       const icon = s.isActive ? LIVE_ICON : SESSION_ICON;
-      const desc = [s.modelLabel, shortProject(s.project), relativeTime(s.lastModified)]
-        .filter(Boolean).join(' · ');
+      const desc = [
+        showModel ? s.modelLabel : '',
+        showProject ? shortProject(s.project) : '',
+        relativeTime(s.lastModified),
+      ].filter(Boolean).join(' · ');
       const cls = grouped ? 'session-item grouped' : 'session-item';
       // Claude Code's own title when it made one, the opening prompt otherwise.
       const label = s.aiTitle || s.prompt || 'Untitled Session';
