@@ -643,10 +643,14 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
             isAgent && (!prev || prev.agentId !== step.agentId);
           const isLastAgentInRun =
             isAgent && (!next || next.agentId !== step.agentId);
+          // Nesting level drives the indent and connector offsets in CSS:
+          // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
+          const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
 
           return (
             <div
               key={k}
+              style={{ '--depth': String(depth) } as React.CSSProperties}
               className={[
                 'step-item',
                 isExpanded ? 'expanded' : '',
@@ -660,6 +664,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
               ].filter(Boolean).join(' ')}
             >
               <button className="step-header" onClick={() => toggleStep(k)}>
+                {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
                 <div className="step-left">
                   <StepIcon step={step} />
                   <span className="step-index">#{k}</span>

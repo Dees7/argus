@@ -623,16 +623,29 @@
    A 5px left indent on agent rows breathes the tree away from the list's
    left edge; the spawn row's trunk is positioned to align across the gap. */
 
-/* Spawn (Task/Agent) row trunk: from the row's vertical center down to its
-   bottom, aligned horizontally with the agent rows' trunk below. */
+/* Tree geometry. Every row carries `--depth` (0 = main session, 1 = agent,
+   2 = agent spawned by an agent). Per level the card shifts by --tree-shift
+   and its content by --tree-step; both constants are chosen so a run's trunk
+   lands on the centre of the spawning row's icon:
+     card    margin-left = shift * depth
+     content padding-left = 16px + step * depth
+     icon centre         = 1px border + padding-left + 7.5px  */
+.steps-list {
+  --tree-shift: 5px;
+  --tree-step: 17px;
+}
+
+/* Spawn (Task/Agent) row stub: from the row's vertical center down to its
+   bottom, aligned with the trunk of the agent rows below. A real element
+   rather than ::before — on a nested Task row both pseudo-elements are
+   already taken by that row's own trunk and elbow. */
 .step-item-task .step-header {
   position: relative;
 }
 
-.step-item-task .step-header::before {
-  content: '';
+.step-spawn-stub {
   position: absolute;
-  left: 28px;
+  left: calc(22px + var(--tree-step) * var(--depth, 0));
   top: 50%;
   bottom: 0;
   width: 2px;
@@ -641,14 +654,14 @@
 }
 
 .step-item-agent .step-header {
-  padding-left: 41px;
+  padding-left: calc(16px + var(--tree-step) * var(--depth, 1));
   position: relative;
 }
 
 .step-item-agent .step-header::before {
   content: '';
   position: absolute;
-  left: 23px;
+  left: calc(var(--tree-step) * var(--depth, 1));
   top: 0;
   bottom: 0;
   width: 2px;
@@ -659,9 +672,9 @@
 .step-item-agent .step-header::after {
   content: '';
   position: absolute;
-  left: 25px;
+  left: calc(2px + var(--tree-step) * var(--depth, 1));
   top: 50%;
-  width: 12px;
+  width: 14px;
   height: 2px;
   background: var(--status-warning, #d4a72c);
   opacity: 0.7;
@@ -688,7 +701,7 @@
      should carry the corner (line in lower half, "┌" pointing right).
    - The "last" agent row in display order is chronologically FIRST,
      adjacent to the spawn directly below — it gets the regular full line. */
-.tree-reversed .step-item-task .step-header::before {
+.tree-reversed .step-spawn-stub {
   top: 0;
   bottom: 50%;
 }
@@ -706,11 +719,11 @@
   display: none;
 }
 
-/* Sub-agent step rows are inset 5px from the main session rows so the agent
-   activity reads as a nested sub-tree, with its own connector line owned
+/* Sub-agent step rows are inset from the rows of whoever spawned them so the
+   agent activity reads as a nested sub-tree, with its own connector line owned
    entirely by the agent rows (no spawn stub from the Task above). */
 .step-item.step-item-agent {
-  margin-left: 5px;
+  margin-left: calc(var(--tree-shift) * var(--depth, 1));
 }
 
 .step-agent-badge {
