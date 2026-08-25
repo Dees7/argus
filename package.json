@@ -332,6 +332,11 @@
             ]
           ]
         },
+        "argus.notes.hideNotes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide the floating Session Notes button in a session. Notes already saved are kept and reappear when this is turned off."
+        },
         "argus.analysis.realCompactsOnly": {
           "type": "boolean",
           "default": false,

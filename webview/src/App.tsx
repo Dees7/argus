@@ -24,6 +24,7 @@ function App() {
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
   const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
+  const [hideNotes, setHideNotes] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
   // Steps left after the Steps tab's own search/filters; null when that tab is
   // closed, in which case the header shows the plain total.
@@ -41,6 +42,9 @@ function App() {
         }
         if (Array.isArray(message.data?.stepsAutoExpand)) {
           setStepsAutoExpand(message.data.stepsAutoExpand);
+        }
+        if (typeof message.data?.hideNotes === 'boolean') {
+          setHideNotes(message.data.hideNotes);
         }
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
@@ -292,8 +296,9 @@ function App() {
           />
         )}
 
-        {/* Session Notes */}
-        <SessionNotes sessionId={session.sessionId} />
+        {/* Session Notes — hidden by argus.notes.hideNotes; saved notes stay in
+            localStorage and come back when the setting is turned off again. */}
+        {!hideNotes && <SessionNotes sessionId={session.sessionId} />}
       </div>
     </div>
   );

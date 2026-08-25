@@ -21,7 +21,12 @@ export class SessionWebviewProviderReact {
     // autoExpand/sort default only takes effect on the next panel.
     context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration(e => {
-        if (!e.affectsConfiguration('argus.steps')) return;
+        if (
+          !e.affectsConfiguration('argus.steps') &&
+          !e.affectsConfiguration('argus.notes')
+        ) {
+          return;
+        }
         const data = this.getUiConfig();
         for (const panel of this.panels.values()) {
           panel.webview.postMessage({ type: 'config', data });
@@ -138,7 +143,11 @@ export class SessionWebviewProviderReact {
    * User settings the webview needs at mount time. Read on every send so a
    * newly opened session always picks up the current settings.json value.
    */
-  private getUiConfig(): { stepsSortOrder: string; stepsAutoExpand: string[] } {
+  private getUiConfig(): {
+    stepsSortOrder: string;
+    stepsAutoExpand: string[];
+    hideNotes: boolean;
+  } {
     const config = vscode.workspace.getConfiguration('argus');
     const sortOrder = config.get<string>('steps.sortOrder', 'newest');
     const allowed = ['newest', 'oldest', 'cost-desc', 'cost-asc'];
@@ -151,6 +160,7 @@ export class SessionWebviewProviderReact {
       stepsAutoExpand: Array.isArray(autoExpand)
         ? autoExpand.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
         : [],
+      hideNotes: config.get<boolean>('notes.hideNotes', false),
     };
   }
 
