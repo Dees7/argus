@@ -332,15 +332,23 @@
   flex-shrink: 0; /* Don't shrink tool name */
 }
 
+/* Subtitle after the tool name: a written description reads as prose in the
+   UI font, while paths/patterns/commands keep the code font (.mono). */
 .step-summary {
-  font-family: var(--font-code);
-  font-size: 12px;
+  font-family: var(--font-display, inherit);
+  font-size: 12.5px;
   color: var(--text);
-  opacity: 0.8;
+  opacity: 0.75;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.step-summary.mono {
+  font-family: var(--font-code);
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 /* Failed-tool indicator — compact red pill with an X icon. Sits between
@@ -584,17 +592,44 @@
   max-height: none;
 }
 
-.token-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+/* Token counts. Live in the renderer toolbar next to the pretty/raw switch,
+   so they must stay quiet enough not to compete with it. */
+.step-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   font-family: var(--font-code);
-  font-size: 12px;
-  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
 }
 
-.token-grid strong {
-  color: var(--text-bright);
+.step-usage-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.step-usage-label {
+  color: var(--text-dim);
+  opacity: 0.65;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.step-usage-value {
+  color: var(--text);
+  opacity: 0.85;
+}
+
+/* Fallback host when the step has no renderer to hang the counts on. */
+.step-usage-standalone {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
 }
 
 .subagents-section {

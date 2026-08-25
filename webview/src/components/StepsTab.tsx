@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Step, Subagent, Finding, spawnKey } from '../types/session';
+import { Step, Subagent, Finding, TokenUsage, spawnKey } from '../types/session';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import RendererErrorBoundary from './RendererErrorBoundary';
@@ -146,6 +146,29 @@ const SortIcon = () => (
     <path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/>
   </svg>
 );
+
+/* ── Token usage ── */
+// Rendered into the pretty/raw toolbar of whichever renderer the step uses,
+// so the counts sit on one line with the controls instead of trailing the
+// expanded body.
+const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
+  const items: [string, number, string][] = [
+    ['in', usage.input_tokens, 'Input tokens'],
+    ['out', usage.output_tokens, 'Output tokens'],
+    ['cache r', usage.cache_read_input_tokens, 'Cache read tokens'],
+    ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens'],
+  ];
+  return (
+    <span className="step-usage">
+      {items.map(([label, value, title]) => (
+        <span key={label} className="step-usage-item" title={title}>
+          <span className="step-usage-label">{label}</span>
+          <span className="step-usage-value">{(value ?? 0).toLocaleString()}</span>
+        </span>
+      ))}
+    </span>
+  );
+};
 
 /* ── Dropdown component ── */
 interface DropdownItem {
@@ -572,34 +595,63 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     return `${min}m ${rem}s`;
   };
 
-  const getStepSummary = (step: Step): string => {
-    if (step.type === 'compact') return 'context compacted — history replaced by a summary';
+  // Subtitle shown next to the tool name. `mono` marks payload text (paths,
+  // patterns, raw commands) so prose descriptions can render in the UI font.
+  const getStepSummary = (step: Step): { text: string; mono: boolean } | null => {
+    if (step.type === 'compact') {
+      return { text: 'context compacted — history replaced by a summary', mono: false };
+    }
     // First line of the prompt, so a turn is recognisable while collapsed.
-    if (step.type === 'user') return (step.content || '').split('\n')[0];
-    if (!step.toolName || !step.toolInput) return '';
+    if (step.type === 'user') {
+      return { text: (step.content || '').split('\n')[0], mono: false };
+    }
+    if (!step.toolName || !step.toolInput) return null;
+
+    const input = step.toolInput as any;
+    const description =
+      typeof input.description === 'string' ? input.description.trim() : '';
 
     try {
       switch (step.toolName) {
         case 'Read':
-          return step.toolInput.file_path || '';
         case 'Write':
-          return step.toolInput.file_path || '';
         case 'Edit':
-          return step.toolInput.file_path || '';
+        case 'MultiEdit':
+          return input.file_path ? { text: input.file_path, mono: true } : null;
         case 'Grep':
-          return `"${step.toolInput.pattern}"${step.toolInput.path ? ` in ${step.toolInput.path}` : ''}`;
         case 'Glob':
-          return `"${step.toolInput.pattern}"${step.toolInput.path ? ` in ${step.toolInput.path}` : ''}`;
+          return { text: `"${input.pattern}"${input.path ? ` in ${input.path}` : ''}`, mono: true };
         case 'Bash':
-          // Full command preserved — overflow handled by CSS ellipsis on .step-summary.
-          return step.toolInput.command || '';
+          // Claude writes a one-line description for every command it runs; it
+          // reads better here than the command, which the expanded body shows
+          // verbatim anyway. Commands without one fall back to the text itself.
+          return description
+            ? { text: description, mono: false }
+            : { text: input.command || '', mono: true };
+        case 'Task':
         case 'Agent':
-          return step.toolInput.description || step.toolInput.prompt || '';
-        default:
-          return '';
+          return { text: description || input.prompt || '', mono: false };
+        default: {
+          if (description) return { text: description, mono: false };
+          // Unknown tools — MCP ones above all — carry no description, so fold
+          // their scalar arguments into `key=value` pairs. Without this the row
+          // would show nothing but the tool name, and a run of MCP calls would
+          // be indistinguishable from one another.
+          const parts: string[] = [];
+          for (const [key, value] of Object.entries(input)) {
+            if (typeof value === 'string') {
+              const v = value.replace(/\s+/g, ' ').trim();
+              if (v) parts.push(`${key}=${v.length > 80 ? `${v.slice(0, 80)}…` : v}`);
+            } else if (typeof value === 'number' || typeof value === 'boolean') {
+              parts.push(`${key}=${value}`);
+            }
+            if (parts.length === 3) break;
+          }
+          return parts.length ? { text: parts.join(' · '), mono: true } : null;
+        }
       }
     } catch {
-      return '';
+      return null;
     }
   };
 
@@ -690,7 +742,15 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
         {filteredSteps.map((step, i) => {
           const k = keyOf(step);
+          const summary = getStepSummary(step);
           const isExpanded = isStepExpanded(step);
+          const hasToolBody = !!(step.toolInput || step.toolResult);
+          const hasContentBody =
+            (step.type === 'text' ||
+              step.type === 'thinking' ||
+              step.type === 'compact' ||
+              step.type === 'user') && !!step.content;
+          const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
           const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
@@ -784,8 +844,10 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                     </>
                   )}
                   {step.toolSuccess === true && <span className="step-success">✓</span>}
-                  {getStepSummary(step) && (
-                    <span className="step-summary">{getStepSummary(step)}</span>
+                  {summary && summary.text && (
+                    <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
+                      {summary.text}
+                    </span>
                   )}
                   {step.toolSuccess === false && (
                     <span className="step-failed" title="Tool returned an error">
@@ -862,15 +924,12 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                           </div>
                         )}
                       >
-                        <ToolRenderer step={step} />
+                        <ToolRenderer step={step} meta={usageNode} />
                       </RendererErrorBoundary>
                     </div>
                   )}
 
-                  {(step.type === 'text' ||
-                    step.type === 'thinking' ||
-                    step.type === 'compact' ||
-                    step.type === 'user') && step.content && (
+                  {hasContentBody && (
                     <div className="detail-section">
                       <RendererErrorBoundary
                         fallback={(err) => (
@@ -882,21 +941,16 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                           </div>
                         )}
                       >
-                        <ContentRenderer step={step} />
+                        <ContentRenderer step={step} meta={usageNode} />
                       </RendererErrorBoundary>
                     </div>
                   )}
 
-                  {step.usage && (
-                    <div className="detail-section">
-                      <div className="detail-label">Token Usage</div>
-                      <div className="token-grid">
-                        <div>Input: <strong>{step.usage.input_tokens}</strong></div>
-                        <div>Output: <strong>{step.usage.output_tokens}</strong></div>
-                        <div>Cache Read: <strong>{step.usage.cache_read_input_tokens}</strong></div>
-                        <div>Cache Create: <strong>{step.usage.cache_creation_input_tokens}</strong></div>
-                      </div>
-                    </div>
+                  {/* Steps with neither renderer (a tool call with no payload,
+                      an empty text block) still have somewhere to show their
+                      token counts. */}
+                  {usageNode && !hasToolBody && !hasContentBody && (
+                    <div className="step-usage-standalone">{usageNode}</div>
                   )}
                 </div>
               )}

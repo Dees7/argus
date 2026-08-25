@@ -36,20 +36,22 @@ const escapeHtml = (s: string) =>
 // ─── Component ───────────────────────────────────────────────────────────
 interface Props {
   step: Step;
+  // Rendered at the left of the pretty/raw toolbar — token counts today.
+  meta?: React.ReactNode;
 }
 
+// Only kinds whose label says more than the step header already does. "Text"
+// and "Thinking" would just repeat the step type, so they carry no label.
 const KIND_LABEL: Record<string, string> = {
-  text: 'Text',
-  thinking: 'Thinking',
   compact: 'Compaction Summary',
   user: 'User Prompt',
 };
 
-const ContentRenderer = ({ step }: Props) => {
+const ContentRenderer = ({ step, meta }: Props) => {
   const [showRaw, setShowRaw] = useState(false);
   const content = step.content || '';
   const kind = step.type;
-  const label = KIND_LABEL[kind] || kind;
+  const label = KIND_LABEL[kind];
 
   const html = useMemo(() => {
     if (!content) return '';
@@ -65,7 +67,10 @@ const ContentRenderer = ({ step }: Props) => {
   return (
     <div className={`content-renderer cr-${kind}`}>
       <div className="cr-toolbar">
-        <span className="cr-kind">{label}</span>
+        <div className="cr-toolbar-left">
+          {label && <span className="cr-kind">{label}</span>}
+          {meta}
+        </div>
         <div className="cr-toggle">
           <button
             type="button"
