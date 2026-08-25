@@ -78,7 +78,7 @@ function App() {
 
   if (!session) {
     return (
-      <div className="error">
+      <div className="app-error">
         <p>No session data available</p>
       </div>
     );

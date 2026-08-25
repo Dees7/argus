@@ -171,8 +171,9 @@
   font-size: 14px;
 }
 
-/* Error */
-.error {
+/* Fatal error screen. Deliberately NOT `.error` — that bare class collides
+   with severity modifiers like `.finding-card.error` in the tabs. */
+.app-error {
   display: flex;
   align-items: center;
   justify-content: center;

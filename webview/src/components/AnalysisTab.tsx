@@ -25,7 +25,7 @@ const renderFinding = (
       <h3>{finding.title}</h3>
     </div>
     <p className="finding-description">{finding.description}</p>
-    {finding.wastedCost && finding.wastedCost > 0 && (
+    {!!finding.wastedCost && finding.wastedCost > 0 && (
       <div className="finding-cost">Wasted: ${finding.wastedCost.toFixed(4)}</div>
     )}
     {finding.affectedSteps && finding.affectedSteps.length > 0 && (
