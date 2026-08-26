@@ -280,13 +280,6 @@ export function activate(context: vscode.ExtensionContext) {
       'argus.filter.currentProject',
       filterState.onlyCurrentProject
     );
-
-    const hasActive =
-      filterState.searchQuery !== '' ||
-      filterState.selectedModels.length > 0 ||
-      filterState.datePreset !== 'all' ||
-      filterState.groupMode !== 'none';
-    vscode.commands.executeCommand('setContext', 'argus.hasActiveFilters', hasActive);
   }
 
   function toggleModel(model: string) {
@@ -442,24 +435,6 @@ export function activate(context: vscode.ExtensionContext) {
       await discoveryService.refreshDiscovery();
       searchService.invalidate();
       allSessions = discoveryService.getSessionSummaries();
-      refreshList();
-    })
-  );
-
-  // Clear filters
-  context.subscriptions.push(
-    vscode.commands.registerCommand('argus.clearFilters', () => {
-      // The project toggle is a persisted preference with its own button, not
-      // part of the ad-hoc filter set this command clears.
-      filterState = {
-        ...DEFAULT_FILTER_STATE,
-        onlyCurrentProject: filterState.onlyCurrentProject,
-      };
-      searchService.cancel();
-      contentMatches = null;
-      listViewProvider.clearSearch();
-      listViewProvider.setSearching(false);
-      syncContextKeys();
       refreshList();
     })
   );

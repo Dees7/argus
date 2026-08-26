@@ -105,12 +105,6 @@
         "category": "Argus"
       },
       {
-        "command": "argus.clearFilters",
-        "title": "Clear All Filters",
-        "icon": "$(clear-all)",
-        "category": "Argus"
-      },
-      {
         "command": "argus.toggleModelOpus",
         "title": "Toggle Opus Filter",
         "category": "Argus"
@@ -218,14 +212,9 @@
           "group": "navigation@2"
         },
         {
-          "command": "argus.clearFilters",
-          "when": "view == argusSessionList && argus.hasActiveFilters",
-          "group": "navigation@3"
-        },
-        {
           "command": "argus.refreshSessions",
           "when": "view == argusSessionList",
-          "group": "navigation@4"
+          "group": "navigation@3"
         }
       ],
       "argus.groupMenu": [
