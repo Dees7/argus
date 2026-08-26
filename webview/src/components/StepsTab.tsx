@@ -601,9 +601,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     if (step.type === 'compact') {
       return { text: 'context compacted — history replaced by a summary', mono: false };
     }
-    // First line of the prompt, so a turn is recognisable while collapsed.
-    if (step.type === 'user') {
-      return { text: (step.content || '').split('\n')[0], mono: false };
+    // First non-empty line of the prompt/reply, so a turn is recognisable
+    // while collapsed.
+    if (step.type === 'user' || step.type === 'text') {
+      const first = (step.content || '')
+        .split('\n')
+        .find(line => line.trim() !== '');
+      return first ? { text: first.trim(), mono: false } : null;
     }
     if (!step.toolName || !step.toolInput) return null;
 
