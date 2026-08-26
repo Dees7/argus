@@ -7,11 +7,13 @@ import { DiscoveryService } from '../services/discoveryService';
 import { SessionDetail } from '../types/models';
 
 /**
- * Whether the Steps/Analysis/... tab bar is folded away. Kept in the
- * extension's global state (VS Code's own storage), like the session list's
- * project filter, so it survives reloads and applies in every window.
+ * Whether the Steps/Analysis/... tab bar and the Steps search bar are folded
+ * away. Kept in the extension's global state (VS Code's own storage), like the
+ * session list's project filter, so they survive reloads and apply in every
+ * window.
  */
 const TABS_COLLAPSED_KEY = 'argus.session.tabsCollapsed';
+const SEARCH_COLLAPSED_KEY = 'argus.session.searchCollapsed';
 
 export class SessionWebviewProviderReact {
   private panels: Map<string, vscode.WebviewPanel> = new Map();
@@ -128,7 +130,10 @@ export class SessionWebviewProviderReact {
             }
             break;
           case 'setTabsCollapsed':
-            await this.setTabsCollapsed(message.collapsed === true);
+            await this.setCollapsed(TABS_COLLAPSED_KEY, message.collapsed === true);
+            break;
+          case 'setSearchCollapsed':
+            await this.setCollapsed(SEARCH_COLLAPSED_KEY, message.collapsed === true);
             break;
         }
       },
@@ -158,6 +163,7 @@ export class SessionWebviewProviderReact {
     stepsAutoExpand: string[];
     hideNotes: boolean;
     tabsCollapsed: boolean;
+    searchCollapsed: boolean;
   } {
     const config = vscode.workspace.getConfiguration('argus');
     const sortOrder = config.get<string>('steps.sortOrder', 'newest');
@@ -173,15 +179,16 @@ export class SessionWebviewProviderReact {
         : [],
       hideNotes: config.get<boolean>('notes.hideNotes', false),
       tabsCollapsed: this.context.globalState.get<boolean>(TABS_COLLAPSED_KEY, false),
+      searchCollapsed: this.context.globalState.get<boolean>(SEARCH_COLLAPSED_KEY, false),
     };
   }
 
   /**
-   * Remember the tab bar's folded state and mirror it into every session
-   * already on screen, so the panels don't drift apart.
+   * Remember a bar's folded state and mirror it into every session already on
+   * screen, so the panels don't drift apart.
    */
-  private async setTabsCollapsed(collapsed: boolean): Promise<void> {
-    await this.context.globalState.update(TABS_COLLAPSED_KEY, collapsed);
+  private async setCollapsed(key: string, collapsed: boolean): Promise<void> {
+    await this.context.globalState.update(key, collapsed);
     const data = this.getUiConfig();
     for (const panel of this.panels.values()) {
       panel.webview.postMessage({ type: 'config', data });

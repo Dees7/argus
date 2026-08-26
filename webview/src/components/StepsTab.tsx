@@ -16,6 +16,10 @@ interface Props {
   // Patterns from settings (argus.steps.autoExpand) — steps whose tool name or
   // type matches start expanded instead of collapsed.
   autoExpand?: string[];
+  // Fold the search/filter bar away (the header's search toggle). The filters
+  // themselves keep their values, so a hidden bar can still be narrowing the
+  // list — the "13/55" tab label is what gives that away.
+  hideControls?: boolean;
   // How many steps survive the current search/filters, reported up so the tab
   // header can show "Steps (13/55)". null while the tab is unmounted.
   onFilteredCountChange?: (count: number | null) => void;
@@ -270,7 +274,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], onFilteredCountChange }: Props) => {
+const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -673,74 +677,76 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
 
   return (
     <div className="steps-tab">
-      <div className="steps-controls">
-        <div className="steps-filter-bar" onClick={e => e.stopPropagation()}>
-          <SearchIcon />
-          <input
-            className="steps-search-input"
-            type="text"
-            placeholder="Search steps..."
-            spellCheck={false}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="steps-search-clear" onClick={() => setSearchQuery('')}>×</button>
-          )}
+      {!hideControls && (
+        <div className="steps-controls">
+          <div className="steps-filter-bar" onClick={e => e.stopPropagation()}>
+            <SearchIcon />
+            <input
+              className="steps-search-input"
+              type="text"
+              placeholder="Search steps..."
+              spellCheck={false}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="steps-search-clear" onClick={() => setSearchQuery('')}>×</button>
+            )}
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="tool"
-            icon={<FilterIcon />}
-            label={toolLabel}
-            items={toolItems}
-            selected={toolFilter.size === 0 ? 'all' : toolFilter}
-            onSelect={toggleToolFilter}
-            isActive={toolFilter.size > 0}
-            multiSelect
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="tool"
+              icon={<FilterIcon />}
+              label={toolLabel}
+              items={toolItems}
+              selected={toolFilter.size === 0 ? 'all' : toolFilter}
+              onSelect={toggleToolFilter}
+              isActive={toolFilter.size > 0}
+              multiSelect
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="status"
-            icon={<StatusIcon />}
-            label={statusLabel}
-            items={statusItems}
-            selected={statusFilter}
-            onSelect={setStatusFilter}
-            isActive={statusFilter !== 'all'}
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="status"
+              icon={<StatusIcon />}
+              label={statusLabel}
+              items={statusItems}
+              selected={statusFilter}
+              onSelect={setStatusFilter}
+              isActive={statusFilter !== 'all'}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          <div className="steps-divider" />
-          <Dropdown
-            id="sort"
-            icon={<SortIcon />}
-            label={SORT_LABELS[sortMode]}
-            items={sortItems}
-            selected={sortMode}
-            onSelect={selectSortMode}
-            isActive={sortMode !== defaultSortMode}
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-          />
+            <div className="steps-divider" />
+            <Dropdown
+              id="sort"
+              icon={<SortIcon />}
+              label={SORT_LABELS[sortMode]}
+              items={sortItems}
+              selected={sortMode}
+              onSelect={selectSortMode}
+              isActive={sortMode !== defaultSortMode}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
 
-          {hasActiveFilters && (
-            <>
-              <div className="steps-divider" />
-              <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-                </svg>
-                <span>Clear</span>
-              </button>
-            </>
-          )}
+            {hasActiveFilters && (
+              <>
+                <div className="steps-divider" />
+                <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                  </svg>
+                  <span>Clear</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="steps-scroll">
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>

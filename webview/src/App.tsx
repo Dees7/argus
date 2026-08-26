@@ -25,9 +25,11 @@ function App() {
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
   const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
   const [hideNotes, setHideNotes] = useState(false);
-  // Tab bar folded away. The extension host owns this flag (global state), so
-  // it is the same in every session panel and survives a reload.
+  // Tab bar / Steps search bar folded away. The extension host owns these
+  // flags (global state), so they are the same in every session panel and
+  // survive a reload.
   const [tabsCollapsed, setTabsCollapsed] = useState(false);
+  const [searchCollapsed, setSearchCollapsed] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
   // Steps left after the Steps tab's own search/filters; null when that tab is
   // closed, in which case the header shows the plain total.
@@ -51,6 +53,9 @@ function App() {
         }
         if (typeof message.data?.tabsCollapsed === 'boolean') {
           setTabsCollapsed(message.data.tabsCollapsed);
+        }
+        if (typeof message.data?.searchCollapsed === 'boolean') {
+          setSearchCollapsed(message.data.searchCollapsed);
         }
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
@@ -141,6 +146,12 @@ function App() {
     window.vscodeApi?.postMessage({ type: 'setTabsCollapsed', collapsed });
   };
 
+  const toggleSearch = () => {
+    const collapsed = !searchCollapsed;
+    setSearchCollapsed(collapsed);
+    window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed });
+  };
+
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
@@ -175,27 +186,23 @@ function App() {
                 <path d="M10.5 3.25v-.5A1 1 0 0 0 9.5 1.75h-6.75A1 1 0 0 0 1.75 2.75V9.5a1 1 0 0 0 1 1h.5" />
               </svg>
             </button>
+          </span>
+
+          {/* Fold the tab bar / the Steps search bar away. Carets read the same
+              way as everywhere: ^ folds, v brings it back. */}
+          <span className="detail-view-toggles">
             <button
-              className="delete-btn"
-              onClick={deleteSession}
-              title="Delete session"
-              aria-label="Delete session"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M2.5 4.25h11" strokeLinecap="round" />
-                <path d="M6.25 4.25v-1.5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5" />
-                <path d="M3.75 4.25 4.4 13.3a1 1 0 0 0 1 .95h5.2a1 1 0 0 0 1-.95l.65-9.05" />
-                <path d="M6.75 7v4.25M9.25 7v4.25" strokeLinecap="round" />
-              </svg>
-            </button>
-            <button
-              className="tabs-toggle-btn"
+              className="view-toggle-btn"
               onClick={toggleTabs}
               title={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
               aria-label={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
               aria-expanded={!tabsCollapsed}
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.25" />
+                <path d="M1.75 6.75h12.5" />
+              </svg>
+              <svg className="view-toggle-caret" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                 <path
                   d={tabsCollapsed ? 'M3.5 6.25 8 10.75l4.5-4.5' : 'M3.5 9.75 8 5.25l4.5 4.5'}
                   strokeLinecap="round"
@@ -203,7 +210,42 @@ function App() {
                 />
               </svg>
             </button>
+            <button
+              className="view-toggle-btn"
+              onClick={toggleSearch}
+              title={searchCollapsed ? 'Show search bar' : 'Hide search bar'}
+              aria-label={searchCollapsed ? 'Show search bar' : 'Hide search bar'}
+              aria-expanded={!searchCollapsed}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="7" cy="7" r="4.25" />
+                <path d="M10.25 10.25 14 14" strokeLinecap="round" />
+              </svg>
+              <svg className="view-toggle-caret" width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path
+                  d={searchCollapsed ? 'M3.5 6.25 8 10.75l4.5-4.5' : 'M3.5 9.75 8 5.25l4.5 4.5'}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
           </span>
+
+          {/* Last in the row, pushed to the far edge — deleting a session is
+              not something to hit while reaching for the copy button. */}
+          <button
+            className="delete-btn"
+            onClick={deleteSession}
+            title="Delete session"
+            aria-label="Delete session"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2.5 4.25h11" strokeLinecap="round" />
+              <path d="M6.25 4.25v-1.5a1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1v1.5" />
+              <path d="M3.75 4.25 4.4 13.3a1 1 0 0 0 1 .95h5.2a1 1 0 0 0 1-.95l.65-9.05" />
+              <path d="M6.75 7v4.25M9.25 7v4.25" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -271,6 +313,7 @@ function App() {
             highlightStep={highlightStep}
             defaultSortMode={stepsSortOrder}
             autoExpand={stepsAutoExpand}
+            hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
           />
         )}

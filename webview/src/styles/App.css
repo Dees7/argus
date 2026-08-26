@@ -60,11 +60,18 @@
   opacity: 1;
 }
 
-.detail-session-id .delete-btn {
+.detail-view-toggles {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 2px;
+  gap: 2px;
+}
+
+/* Icon + caret: the icon says what folds, the caret which way it goes. */
+.detail-view-toggles .view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 3px;
   background: none;
   border: none;
   border-radius: 3px;
@@ -73,28 +80,34 @@
   opacity: 0.7;
 }
 
-.detail-session-id .delete-btn:hover {
+.detail-view-toggles .view-toggle-btn:hover {
   background: var(--bg-panel);
-  color: #ef4444;
+  color: var(--text-bright);
   opacity: 1;
 }
 
-.detail-session-id .tabs-toggle-btn {
+.view-toggle-caret {
+  opacity: 0.8;
+}
+
+/* Last in the meta row and pushed to the far edge, away from everything else. */
+.detail-meta > .delete-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-left: auto;
   padding: 2px;
   background: none;
   border: none;
   border-radius: 3px;
   color: var(--text-dim);
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
-.detail-session-id .tabs-toggle-btn:hover {
+.detail-meta > .delete-btn:hover {
   background: var(--bg-panel);
-  color: var(--text-bright);
+  color: #ef4444;
   opacity: 1;
 }
 
