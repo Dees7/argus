@@ -79,6 +79,25 @@
   opacity: 1;
 }
 
+.detail-session-id .tabs-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.detail-session-id .tabs-toggle-btn:hover {
+  background: var(--bg-panel);
+  color: var(--text-bright);
+  opacity: 1;
+}
+
 .meta-badge {
   padding: 2px 8px;
   background: var(--bg-panel);

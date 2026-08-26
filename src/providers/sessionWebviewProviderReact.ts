@@ -6,6 +6,13 @@ import { AnalysisOptions, AnalyzerService } from '../services/analyzerService';
 import { DiscoveryService } from '../services/discoveryService';
 import { SessionDetail } from '../types/models';
 
+/**
+ * Whether the Steps/Analysis/... tab bar is folded away. Kept in the
+ * extension's global state (VS Code's own storage), like the session list's
+ * project filter, so it survives reloads and applies in every window.
+ */
+const TABS_COLLAPSED_KEY = 'argus.session.tabsCollapsed';
+
 export class SessionWebviewProviderReact {
   private panels: Map<string, vscode.WebviewPanel> = new Map();
   private watchers: Map<string, fs.FSWatcher> = new Map();
@@ -120,6 +127,9 @@ export class SessionWebviewProviderReact {
               vscode.window.showErrorMessage('Argus: failed to delete session: ' + msg);
             }
             break;
+          case 'setTabsCollapsed':
+            await this.setTabsCollapsed(message.collapsed === true);
+            break;
         }
       },
       undefined,
@@ -147,6 +157,7 @@ export class SessionWebviewProviderReact {
     stepsSortOrder: string;
     stepsAutoExpand: string[];
     hideNotes: boolean;
+    tabsCollapsed: boolean;
   } {
     const config = vscode.workspace.getConfiguration('argus');
     const sortOrder = config.get<string>('steps.sortOrder', 'newest');
@@ -161,7 +172,20 @@ export class SessionWebviewProviderReact {
         ? autoExpand.filter((p): p is string => typeof p === 'string' && p.trim() !== '')
         : [],
       hideNotes: config.get<boolean>('notes.hideNotes', false),
+      tabsCollapsed: this.context.globalState.get<boolean>(TABS_COLLAPSED_KEY, false),
     };
+  }
+
+  /**
+   * Remember the tab bar's folded state and mirror it into every session
+   * already on screen, so the panels don't drift apart.
+   */
+  private async setTabsCollapsed(collapsed: boolean): Promise<void> {
+    await this.context.globalState.update(TABS_COLLAPSED_KEY, collapsed);
+    const data = this.getUiConfig();
+    for (const panel of this.panels.values()) {
+      panel.webview.postMessage({ type: 'config', data });
+    }
   }
 
   /**

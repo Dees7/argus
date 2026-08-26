@@ -25,6 +25,9 @@ function App() {
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
   const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
   const [hideNotes, setHideNotes] = useState(false);
+  // Tab bar folded away. The extension host owns this flag (global state), so
+  // it is the same in every session panel and survives a reload.
+  const [tabsCollapsed, setTabsCollapsed] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
   // Steps left after the Steps tab's own search/filters; null when that tab is
   // closed, in which case the header shows the plain total.
@@ -45,6 +48,9 @@ function App() {
         }
         if (typeof message.data?.hideNotes === 'boolean') {
           setHideNotes(message.data.hideNotes);
+        }
+        if (typeof message.data?.tabsCollapsed === 'boolean') {
+          setTabsCollapsed(message.data.tabsCollapsed);
         }
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
@@ -127,6 +133,14 @@ function App() {
     window.vscodeApi?.postMessage({ type: 'deleteSession' });
   };
 
+  // Flip locally so the bar folds right away, and let the host store it; the
+  // host echoes a config message back, which also updates any other panel.
+  const toggleTabs = () => {
+    const collapsed = !tabsCollapsed;
+    setTabsCollapsed(collapsed);
+    window.vscodeApi?.postMessage({ type: 'setTabsCollapsed', collapsed });
+  };
+
   const formatDuration = (ms: number): string => {
     if (!ms) return '';
     const sec = Math.round(ms / 1000);
@@ -174,60 +188,79 @@ function App() {
                 <path d="M6.75 7v4.25M9.25 7v4.25" strokeLinecap="round" />
               </svg>
             </button>
+            <button
+              className="tabs-toggle-btn"
+              onClick={toggleTabs}
+              title={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
+              aria-label={tabsCollapsed ? 'Show tabs' : 'Hide tabs'}
+              aria-expanded={!tabsCollapsed}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path
+                  d={tabsCollapsed ? 'M3.5 6.25 8 10.75l4.5-4.5' : 'M3.5 9.75 8 5.25l4.5 4.5'}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
           </span>
         </div>
       </div>
 
-      <div className="tab-bar">
-        <button
-          className={`tab ${activeTab === 'steps' ? 'active' : ''}`}
-          onClick={() => setActiveTab('steps')}
-        >
-          Steps ({stepsTabLabel})
-        </button>
-        <button
-          className={`tab ${activeTab === 'analysis' ? 'active' : ''}`}
-          onClick={() => setActiveTab('analysis')}
-        >
-          Analysis ({findingCount})
-        </button>
-        <button
-          className={`tab ${activeTab === 'cost' ? 'active' : ''}`}
-          onClick={() => setActiveTab('cost')}
-        >
-          Cost (${totalCost.toFixed(2)})
-        </button>
-        <button
-          className={`tab ${activeTab === 'flow' ? 'active' : ''}`}
-          onClick={() => setActiveTab('flow')}
-        >
-          Flow
-        </button>
-        <button
-          className={`tab ${activeTab === 'map' ? 'active' : ''}`}
-          onClick={() => setActiveTab('map')}
-        >
-          Map
-        </button>
-        <button
-          className={`tab ${activeTab === 'context' ? 'active' : ''}`}
-          onClick={() => setActiveTab('context')}
-        >
-          Context
-        </button>
-        <button
-          className={`tab ${activeTab === 'performance' ? 'active' : ''}`}
-          onClick={() => setActiveTab('performance')}
-        >
-          Performance
-        </button>
-        <button
-          className={`tab ${activeTab === 'insights' ? 'active' : ''}`}
-          onClick={() => setActiveTab('insights')}
-        >
-          Insights
-        </button>
-      </div>
+      {/* Folded away by the caret next to the delete button; the active tab's
+          content (and its own search box) stays where it is. */}
+      {!tabsCollapsed && (
+        <div className="tab-bar">
+          <button
+            className={`tab ${activeTab === 'steps' ? 'active' : ''}`}
+            onClick={() => setActiveTab('steps')}
+          >
+            Steps ({stepsTabLabel})
+          </button>
+          <button
+            className={`tab ${activeTab === 'analysis' ? 'active' : ''}`}
+            onClick={() => setActiveTab('analysis')}
+          >
+            Analysis ({findingCount})
+          </button>
+          <button
+            className={`tab ${activeTab === 'cost' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cost')}
+          >
+            Cost (${totalCost.toFixed(2)})
+          </button>
+          <button
+            className={`tab ${activeTab === 'flow' ? 'active' : ''}`}
+            onClick={() => setActiveTab('flow')}
+          >
+            Flow
+          </button>
+          <button
+            className={`tab ${activeTab === 'map' ? 'active' : ''}`}
+            onClick={() => setActiveTab('map')}
+          >
+            Map
+          </button>
+          <button
+            className={`tab ${activeTab === 'context' ? 'active' : ''}`}
+            onClick={() => setActiveTab('context')}
+          >
+            Context
+          </button>
+          <button
+            className={`tab ${activeTab === 'performance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('performance')}
+          >
+            Performance
+          </button>
+          <button
+            className={`tab ${activeTab === 'insights' ? 'active' : ''}`}
+            onClick={() => setActiveTab('insights')}
+          >
+            Insights
+          </button>
+        </div>
+      )}
 
       <div className="tab-content">
         {activeTab === 'steps' && (
