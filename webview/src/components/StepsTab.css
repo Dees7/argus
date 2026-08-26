@@ -732,6 +732,50 @@
   display: none;
 }
 
+/* An expanded row grows a `.step-details` block below its header, and the
+   trunk drawn on the header stops at the header's bottom edge — the tree line
+   would break for the whole height of the details. Continue it through the
+   details at the same offset (it inherits `--depth`, so nested runs shift with
+   their rows). Only where the header's line actually reaches the bottom:
+   a run's terminating row closes with the "└"/"┌" corner at mid-height and
+   must not continue past it. */
+.step-item-agent .step-details,
+.step-item-task .step-details {
+  position: relative;
+  padding-left: calc(52px + var(--tree-step) * var(--depth, 0));
+}
+
+/* A nested Task row is both an agent row and a spawn row, so it may need two
+   continuations at once: ::before carries the run's own trunk, ::after the
+   stub down to the agents it spawned. */
+.step-item-agent.expanded:not(.step-agent-last) .step-details::before,
+.tree-reversed .step-item-agent.expanded.step-agent-last:not(.step-agent-first) .step-details::before,
+.step-item-task.expanded .step-details::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--status-warning, #d4a72c);
+  opacity: 0.7;
+}
+
+.step-item-agent .step-details::before {
+  left: calc(var(--tree-step) * var(--depth, 1));
+}
+
+/* The spawn stub sits further right than an agent row's trunk — it drops from
+   the spawning row's own icon — so its continuation keeps that offset. */
+.step-item-task .step-details::after {
+  left: calc(22px + var(--tree-step) * var(--depth, 0));
+}
+
+/* Reversed order: the spawn row sits below its agents, so its stub points up
+   and ends at mid-height — there is nothing to continue into the details. */
+.tree-reversed .step-item-task.expanded .step-details::after {
+  content: none;
+}
+
 /* Sub-agent step rows are inset from the rows of whoever spawned them so the
    agent activity reads as a nested sub-tree, with its own connector line owned
    entirely by the agent rows (no spawn stub from the Task above). */
