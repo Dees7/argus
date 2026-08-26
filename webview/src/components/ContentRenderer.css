@@ -67,8 +67,8 @@
 }
 
 .cr-toggle-btn.active {
-  background: var(--accent);
-  color: var(--bg);
+  background: rgba(128, 128, 128, 0.22);
+  color: var(--text-bright);
 }
 
 /* Pretty markdown body */
