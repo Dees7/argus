@@ -175,6 +175,11 @@
         "category": "Argus"
       },
       {
+        "command": "argus.setGroupDate",
+        "title": "Group by Date",
+        "category": "Argus"
+      },
+      {
         "command": "argus.filterCurrentProjectOn",
         "title": "Show Only Current Project",
         "icon": "$(filter)",
@@ -229,6 +234,10 @@
         {
           "command": "argus.setGroupModel",
           "group": "group@3"
+        },
+        {
+          "command": "argus.setGroupDate",
+          "group": "group@4"
         }
       ]
     },

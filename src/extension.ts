@@ -497,7 +497,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('argus.setGroupNone', () => setGroupMode('none')),
     vscode.commands.registerCommand('argus.setGroupProject', () => setGroupMode('project')),
-    vscode.commands.registerCommand('argus.setGroupModel', () => setGroupMode('model'))
+    vscode.commands.registerCommand('argus.setGroupModel', () => setGroupMode('model')),
+    vscode.commands.registerCommand('argus.setGroupDate', () => setGroupMode('date'))
   );
 
   // Initial discovery — fire and forget; ensureSessions dedupes against the
