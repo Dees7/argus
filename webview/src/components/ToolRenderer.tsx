@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import hljs from 'highlight.js';
 import { diffLines } from 'diff';
-import { Step } from '../types/session';
+import { Attachment, Step } from '../types/session';
+import Attachments, { useAttachmentBytes } from './Attachments';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
 
@@ -516,9 +517,49 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
+/**
+ * The base64 payload of a result's attachments. The parser leaves a `[image]`
+ * marker in the result text — that is the parsed view — so the raw view has to
+ * go back to the host for the bytes the transcript actually holds.
+ */
+const RawAttachments = ({
+  attachments,
+  agentId,
+  preClass,
+}: {
+  attachments: Attachment[];
+  agentId?: string;
+  preClass: string;
+}) => {
+  const { blobs, request } = useAttachmentBytes(attachments, agentId);
+
+  useEffect(() => {
+    for (const attachment of attachments) request(attachment.id);
+  }, [attachments, request]);
+
+  return (
+    <>
+      {attachments.map(attachment => {
+        const blob = blobs[attachment.id];
+        return (
+          <div className="tr-raw-section" key={attachment.id}>
+            <div className="tr-section-label">
+              {attachment.name} · {attachment.mediaType} (base64)
+            </div>
+            <pre className={preClass}>
+              {blob?.base64 ?? blob?.error ?? 'Loading…'}
+            </pre>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 const RawView = ({ step, wrap }: { step: Step; wrap?: boolean }) => {
   const result = parseToolResult(step.toolResult);
   const preClass = `tr-code-raw${wrap ? ' tr-code-raw-wrap' : ''}`;
+  const attachments = step.attachments ?? [];
   return (
     <div className="tr-raw">
       {step.toolInput !== undefined && (
@@ -536,6 +577,9 @@ const RawView = ({ step, wrap }: { step: Step; wrap?: boolean }) => {
               : String(result.value ?? step.toolResult)}
           </pre>
         </div>
+      )}
+      {attachments.length > 0 && (
+        <RawAttachments attachments={attachments} agentId={step.agentId} preClass={preClass} />
       )}
     </div>
   );
@@ -585,11 +629,15 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   const tool = step.toolName;
   const renderer = tool ? RENDERERS[tool] : undefined;
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
+  const attachments = step.attachments ?? [];
 
   // No tool data at all — nothing to render.
   if (!step.toolInput && !step.toolResult) return null;
 
-  const hasPretty = !!renderer;
+  // A result that came back as a picture or a file is already parsed: showing
+  // it is showing the attachment. So a tool with no renderer of its own still
+  // gets a pretty view when it returned one.
+  const hasPretty = !!renderer || attachments.length > 0;
   // Tools without a pretty renderer fall back to Raw, but keep Wrap available.
   const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
@@ -661,7 +709,12 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
       )}
 
       {active === 'pretty' ? (
-        renderer!({ input: step.toolInput, result: parsed.value })
+        <>
+          {renderer?.({ input: step.toolInput, result: parsed.value })}
+          {attachments.length > 0 && (
+            <Attachments attachments={attachments} agentId={step.agentId} />
+          )}
+        </>
       ) : (
         <RawView step={step} wrap={active === 'wrap'} />
       )}

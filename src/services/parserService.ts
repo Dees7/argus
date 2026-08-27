@@ -85,6 +85,99 @@ function base64Size(data: string): number {
   return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
 }
 
+/**
+ * The two node shapes a base64 payload is stored in, as `[data, media type]`:
+ *
+ *  - `{type: "base64", media_type, data}` — the API's own `source` object,
+ *    used by `image`/`document` blocks wherever they appear;
+ *  - `{base64, type: "image/png", …}` — what Claude Code writes under
+ *    `toolUseResult` for a tool that returned an image.
+ *
+ * Anything else returns null and the walk keeps descending.
+ */
+function readBlobNode(node: any): [string, string | undefined] | null {
+  if (node.type === 'base64' && typeof node.data === 'string') {
+    return [node.data, typeof node.media_type === 'string' ? node.media_type : undefined];
+  }
+  if (typeof node.base64 === 'string') {
+    return [node.base64, typeof node.type === 'string' ? node.type : undefined];
+  }
+  return null;
+}
+
+/**
+ * Depth-first hunt for base64 payloads anywhere in an event, reporting the
+ * dotted JSON path to each. Matching by payload shape instead of by the
+ * message types we recognise is the point: an unparsed message still gives up
+ * its images.
+ */
+function walkBlobs(
+  value: any,
+  path: string,
+  emit: (path: string, data: string, mediaType?: string) => void
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => walkBlobs(item, path ? `${path}.${i}` : String(i), emit));
+    return;
+  }
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+
+  const blob = readBlobNode(value);
+  if (blob) {
+    emit(path, blob[0], blob[1]);
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    // Keys are plain identifiers in every transcript shape, so a dotted path
+    // stays unambiguous; a key that did contain a dot would only make the
+    // locator unresolvable, never point it somewhere else.
+    walkBlobs(child, path ? `${path}.${key}` : key, emit);
+  }
+}
+
+/** A blob found in an event, with the path that leads back to its bytes. */
+interface EventAttachment {
+  path: string;
+  attachment: Attachment;
+}
+
+/**
+ * Take the blobs sitting at or below `prefix` out of an event's pool. Claiming
+ * removes them, so each blob lands on exactly one step and whatever no step
+ * wanted is still identifiable afterwards.
+ */
+function claimAttachments(pool: EventAttachment[], prefix: string): Attachment[] {
+  const claimed: Attachment[] = [];
+  for (let i = pool.length - 1; i >= 0; i--) {
+    const { path } = pool[i];
+    if (path === prefix || path.startsWith(`${prefix}.`)) {
+      claimed.unshift(pool[i].attachment);
+      pool.splice(i, 1);
+    }
+  }
+  return claimed;
+}
+
+/**
+ * Hang blobs off a step, naming them after their place in it — the name is
+ * what the user sees in the save dialog, so it says which step it came from
+ * rather than repeating the path through the JSON.
+ */
+function attachTo(step: Step, attachments: Attachment[]): void {
+  if (attachments.length === 0) {
+    return;
+  }
+  const list = step.attachments ?? [];
+  for (const attachment of attachments) {
+    attachment.name = `step-${step.index}-${list.length + 1}.${extensionFor(attachment.mediaType)}`;
+    list.push(attachment);
+  }
+  step.attachments = list;
+}
+
 interface QuickMetadata {
   model: string;
   firstTimestamp: string;
@@ -366,6 +459,12 @@ export class ParserService {
         }
       }
 
+      // Blobs the event carries, found by shape rather than by message type.
+      // Each is claimed by whichever step turns out to own it; whatever is
+      // left over gets a step of its own below, so an image can never be lost
+      // just because the message around it renders to nothing.
+      const blobs = this.collectEventAttachments(event);
+
       // What the user actually typed. Tool results ride on user events too,
       // so they are filtered out — by `toolUseResult` where it is present, and
       // by the content shape for the sub-agent transcripts that omit it.
@@ -379,18 +478,19 @@ export class ParserService {
           // A pasted screenshot with no caption is a turn too: the message
           // carries an image block and nothing else, so keying the step off
           // the text alone would drop it from the timeline entirely.
-          const attachments = this.collectAttachments(event.uuid, content, steps.length);
+          const attachments = claimAttachments(blobs, 'message.content');
           if (text || attachments.length > 0) {
-            steps.push({
+            const step: Step = {
               index: steps.length,
               type: 'user',
               timestamp: new Date(event.timestamp),
               uuid: event.uuid,
               messageId: event.message?.id ?? '',
               content: text,
-              attachments: attachments.length > 0 ? attachments : undefined,
               cost: 0,
-            });
+            };
+            attachTo(step, attachments);
+            steps.push(step);
           }
         }
       }
@@ -400,7 +500,7 @@ export class ParserService {
       // assistant message for it, so give it a step of its own to keep the
       // boundary visible in the timeline.
       if (event.type === 'user' && event.isCompactSummary === true) {
-        steps.push({
+        const step: Step = {
           index: steps.length,
           type: 'compact',
           timestamp: new Date(event.timestamp),
@@ -408,7 +508,9 @@ export class ParserService {
           messageId: event.message?.id ?? '',
           content: this.extractTextContent(event.message?.content),
           cost: 0,
-        });
+        };
+        attachTo(step, claimAttachments(blobs, 'message.content'));
+        steps.push(step);
       }
 
       // Process assistant messages
@@ -530,6 +632,15 @@ export class ParserService {
             }
           }
         }
+
+        // An image the assistant itself put in a message: no block type of
+        // ours renders it, so it rides along with the last step this message
+        // produced. When the message produced no step at all, it stays in the
+        // pool and gets one of its own below.
+        const last = steps[steps.length - 1];
+        if (last && last.uuid === event.uuid) {
+          attachTo(last, claimAttachments(blobs, 'message.content'));
+        }
       }
 
       // Process tool results. Two transcript shapes carry them:
@@ -592,28 +703,33 @@ export class ParserService {
 
             // Screenshots and other blobs a tool handed back. They belong to
             // the call that produced them, so they hang off the tool step
-            // rather than the user event that transported them.
-            if (at >= 0) {
-              const blobs = this.collectAttachments(
-                event.uuid,
-                block.content,
-                toolStep.index,
-                `${at}.`
-              );
-              if (blobs.length > 0) {
-                const existing = steps[toolStep.index].attachments ?? [];
-                // A transcript can repeat a result event; ids are locators, so
-                // the repeat describes the same bytes and must not be listed
-                // twice.
-                const seen = new Set(existing.map(a => a.id));
-                steps[toolStep.index].attachments = [
-                  ...existing,
-                  ...blobs.filter(a => !seen.has(a.id)),
-                ];
-              }
+            // rather than the user event that transported them. A turn with a
+            // single result also owns whatever sits outside the blocks —
+            // `toolUseResult` for tools whose output never became a block.
+            attachTo(steps[toolStep.index], claimAttachments(blobs, `message.content.${at}`));
+            if (entries.length === 1) {
+              attachTo(steps[toolStep.index], claimAttachments(blobs, 'toolUseResult'));
             }
           }
         }
+      }
+
+      // Blobs from an event no step claimed — a queued paste (`attachment`
+      // events), an image on a message the timeline skips, a result shape
+      // nobody could attribute. They get a step of their own so the picture is
+      // still reachable, even though the message around it stays unrendered.
+      if (blobs.length > 0) {
+        const step: Step = {
+          index: steps.length,
+          type: 'attachment',
+          timestamp: new Date(event.timestamp),
+          uuid: event.uuid,
+          messageId: event.message?.id ?? '',
+          content: '',
+          cost: 0,
+        };
+        attachTo(step, blobs.splice(0).map(entry => entry.attachment));
+        steps.push(step);
       }
     }
 
@@ -676,45 +792,49 @@ export class ParserService {
   }
 
   /**
-   * Describe every base64 blob in a message body, without copying the bytes.
-   * `pathPrefix` is set when the blocks sit one level down, inside a
-   * `tool_result`, so the locator still points at the raw block.
+   * Every base64 blob an event carries, wherever it sits. Deliberately shape-
+   * agnostic: the walk keys off the payload itself rather than off a list of
+   * block types we know about, so a screenshot from an MCP server whose
+   * result shape we have never seen still turns up. Bytes are not copied —
+   * only the path back to them.
    */
-  private collectAttachments(
-    uuid: string,
-    content: any,
-    stepIndex: number,
-    pathPrefix = ''
-  ): Attachment[] {
-    if (!Array.isArray(content)) {
-      return [];
-    }
+  private collectEventAttachments(event: any): EventAttachment[] {
+    const found: EventAttachment[] = [];
+    // A blob duplicated inside one event is one attachment: Claude Code
+    // writes a tool's screenshot twice, once as the block the model saw and
+    // again under `toolUseResult`. Keyed on a prefix rather than a hash of
+    // the whole payload, which would mean digesting megabytes per session.
+    const seen = new Map<string, EventAttachment>();
 
-    const attachments: Attachment[] = [];
-    content.forEach((block: any, i: number) => {
-      if (!block || (block.type !== 'image' && block.type !== 'document')) {
+    walkBlobs(event, '', (path, data, mediaType) => {
+      const type = mediaType || 'application/octet-stream';
+      const key = `${data.length}:${data.slice(0, 64)}`;
+      const existing = seen.get(key);
+      // The canonical copy is the one in `message.content`: it is what the
+      // model was shown, and it survives when a result shape changes.
+      if (existing) {
+        if (path.startsWith('message.content') && !existing.path.startsWith('message.content')) {
+          existing.path = path;
+          existing.attachment.id = `${event.uuid}#${path}`;
+        }
         return;
       }
-      const source = block.source;
-      if (!source || source.type !== 'base64' || typeof source.data !== 'string') {
-        return;
-      }
 
-      const mediaType =
-        typeof source.media_type === 'string' ? source.media_type : 'application/octet-stream';
-      const path = `${pathPrefix}${i}`;
-      attachments.push({
-        id: `${uuid}#${path}`,
-        kind: mediaType.startsWith('image/') ? 'image' : 'file',
-        mediaType,
-        size: base64Size(source.data),
-        // Position rather than a counter: it keeps the name unique even when
-        // one step collects blobs from several result blocks.
-        name: `step-${stepIndex}-${path.replace(/\./g, '-')}.${extensionFor(mediaType)}`,
-      });
+      const attachment: Attachment = {
+        id: `${event.uuid}#${path}`,
+        kind: type.startsWith('image/') ? 'image' : 'file',
+        mediaType: type,
+        size: base64Size(data),
+        // Provisional: renamed after the blob is attached to a step, which is
+        // where a name the user will see in a save dialog can be built.
+        name: `attachment.${extensionFor(type)}`,
+      };
+      const entry: EventAttachment = { path, attachment };
+      seen.set(key, entry);
+      found.push(entry);
     });
 
-    return attachments;
+    return found;
   }
 
   /**
@@ -731,8 +851,8 @@ export class ParserService {
       return null;
     }
     const uuid = id.slice(0, hash);
-    const path = id.slice(hash + 1).split('.').map(Number);
-    if (path.length === 0 || path.some(n => !Number.isInteger(n) || n < 0)) {
+    const path = id.slice(hash + 1).split('.');
+    if (path.length === 0 || path.some(segment => segment === '')) {
       return null;
     }
 
@@ -757,28 +877,22 @@ export class ParserService {
           continue;
         }
 
-        let block: any = event.message?.content;
-        for (let i = 0; i < path.length; i++) {
-          if (!Array.isArray(block)) {
+        // The path is a plain JSON walk from the event root, so it resolves
+        // the same whether the blob sat in a message block, in a tool result,
+        // or somewhere neither we nor the renderer understands.
+        let node: any = event;
+        for (const segment of path) {
+          if (!node || typeof node !== 'object') {
             return null;
           }
-          block = block[path[i]];
-          // Anything left in the path descends through the block's own
-          // content — that is where a tool result keeps its blobs.
-          if (i < path.length - 1) {
-            block = block?.content;
-          }
+          node = Array.isArray(node) ? node[Number(segment)] : node[segment];
         }
 
-        const source = block?.source;
-        if (!source || source.type !== 'base64' || typeof source.data !== 'string') {
+        const blob = node && typeof node === 'object' ? readBlobNode(node) : null;
+        if (!blob) {
           return null;
         }
-        return {
-          mediaType:
-            typeof source.media_type === 'string' ? source.media_type : 'application/octet-stream',
-          data: source.data,
-        };
+        return { mediaType: blob[1] || 'application/octet-stream', data: blob[0] };
       }
     } finally {
       rl.close();

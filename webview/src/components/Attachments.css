@@ -8,6 +8,16 @@
   gap: 8px;
 }
 
+/* Inside a tool's pretty view the block sits flush against the renderer above
+   it, which draws its own edge-to-edge sections — give it the same gutters. */
+.tool-renderer .step-attachments {
+  padding: 10px 12px;
+}
+
+.tr-block + .step-attachments {
+  border-top: 1px solid var(--border);
+}
+
 .attachment-badges {
   display: flex;
   flex-wrap: wrap;

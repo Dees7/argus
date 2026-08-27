@@ -305,6 +305,7 @@
 .step-icon-error   { color: #D97A7A; }
 .step-icon-compact { color: #C8956A; }
 .step-icon-user    { color: #7EA6D9; }
+.step-icon-attachment { color: #9BB0C4; }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {

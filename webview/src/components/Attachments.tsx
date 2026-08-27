@@ -2,19 +2,92 @@ import { useCallback, useEffect, useState } from 'react';
 import { Attachment } from '../types/session';
 import './Attachments.css';
 
+// Bytes stay on the host until something on screen asks for them: one
+// screenshot is ~200 KB of base64, and a browser-driving session can carry
+// dozens of them.
+export interface BlobState {
+  loading: boolean;
+  base64?: string;
+  mediaType?: string;
+  error?: string;
+}
+
+/**
+ * Fetches attachment bytes from the extension host on request and caches them
+ * for the life of the component. Shared with the raw tool view, which shows
+ * the same payload as text instead of as a picture.
+ */
+export function useAttachmentBytes(attachments: Attachment[], agentId?: string) {
+  const [blobs, setBlobs] = useState<Record<string, BlobState>>({});
+
+  // The host answers every fetch on the panel's single message channel, so
+  // each mounted view keeps only the replies addressed to its own blobs.
+  useEffect(() => {
+    const ids = new Set(attachments.map(a => a.id));
+    const onMessage = (event: MessageEvent) => {
+      const message = event.data;
+      if (message?.type !== 'attachmentData' || !ids.has(message.id)) return;
+      setBlobs(prev => ({
+        ...prev,
+        [message.id]:
+          typeof message.data === 'string'
+            ? { loading: false, base64: message.data, mediaType: message.mediaType }
+            : { loading: false, error: message.error || 'Could not read the attachment.' },
+      }));
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [attachments]);
+
+  const request = useCallback(
+    (id: string) => {
+      setBlobs(prev => {
+        if (prev[id]?.loading || prev[id]?.base64) return prev;
+        window.vscodeApi?.postMessage({ type: 'requestAttachment', id, agentId });
+        return { ...prev, [id]: { loading: true } };
+      });
+    },
+    [agentId]
+  );
+
+  return { blobs, request };
+}
+
+export const dataUrl = (attachment: Attachment, blob: BlobState): string =>
+  `data:${blob.mediaType || attachment.mediaType};base64,${blob.base64}`;
+
+export const formatSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/** Hand an attachment to whatever the OS opens that file type with. */
+export const openAttachment = (attachment: Attachment, agentId?: string) => {
+  window.vscodeApi?.postMessage({
+    type: 'openAttachment',
+    id: attachment.id,
+    name: attachment.name,
+    agentId,
+  });
+};
+
+/** Write an attachment wherever the user points — the only route out for
+ *  anything that is not an image. */
+export const saveAttachment = (attachment: Attachment, agentId?: string) => {
+  window.vscodeApi?.postMessage({
+    type: 'saveAttachment',
+    id: attachment.id,
+    name: attachment.name,
+    agentId,
+  });
+};
+
 interface Props {
   attachments: Attachment[];
   // A sub-agent step's blobs live in that agent's own transcript, so the host
   // needs to be told which file to reach into.
   agentId?: string;
-}
-
-// Bytes stay on the host until a badge is opened: one screenshot is ~200 KB of
-// base64, and a browser-driving session can carry dozens of them.
-interface BlobState {
-  loading: boolean;
-  dataUrl?: string;
-  error?: string;
 }
 
 const ImageIcon = () => (
@@ -32,76 +105,25 @@ const FileIcon = () => (
   </svg>
 );
 
-const formatSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
 const Attachments = ({ attachments, agentId }: Props) => {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const [blobs, setBlobs] = useState<Record<string, BlobState>>({});
-
-  // The host answers every fetch on the panel's single message channel, so
-  // each mounted row keeps only the replies addressed to its own blobs.
-  useEffect(() => {
-    const ids = new Set(attachments.map(a => a.id));
-    const onMessage = (event: MessageEvent) => {
-      const message = event.data;
-      if (message?.type !== 'attachmentData' || !ids.has(message.id)) return;
-      setBlobs(prev => ({
-        ...prev,
-        [message.id]:
-          typeof message.data === 'string'
-            ? {
-                loading: false,
-                dataUrl: `data:${message.mediaType || 'application/octet-stream'};base64,${message.data}`,
-              }
-            : { loading: false, error: message.error || 'Could not read the attachment.' },
-      }));
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [attachments]);
+  const { blobs, request } = useAttachmentBytes(attachments, agentId);
 
   const toggle = useCallback(
     (attachment: Attachment) => {
+      const wasOpen = openIds.has(attachment.id);
       setOpenIds(prev => {
         const next = new Set(prev);
-        if (next.has(attachment.id)) next.delete(attachment.id);
+        if (wasOpen) next.delete(attachment.id);
         else next.add(attachment.id);
         return next;
       });
-
       // Only images are previewed, so only they need the bytes here; a file
       // badge fetches nothing until the user actually asks to save it.
-      if (attachment.kind !== 'image' || openIds.has(attachment.id)) return;
-      setBlobs(prev => {
-        if (prev[attachment.id]?.loading || prev[attachment.id]?.dataUrl) return prev;
-        window.vscodeApi?.postMessage({ type: 'requestAttachment', id: attachment.id, agentId });
-        return { ...prev, [attachment.id]: { loading: true } };
-      });
+      if (!wasOpen && attachment.kind === 'image') request(attachment.id);
     },
-    [agentId, openIds]
+    [openIds, request]
   );
-
-  const open = (attachment: Attachment) => {
-    window.vscodeApi?.postMessage({
-      type: 'openAttachment',
-      id: attachment.id,
-      name: attachment.name,
-      agentId,
-    });
-  };
-
-  const save = (attachment: Attachment) => {
-    window.vscodeApi?.postMessage({
-      type: 'saveAttachment',
-      id: attachment.id,
-      name: attachment.name,
-      agentId,
-    });
-  };
 
   if (attachments.length === 0) return null;
 
@@ -137,7 +159,11 @@ const Attachments = ({ attachments, agentId }: Props) => {
               <div className="attachment-panel-note">
                 {attachment.mediaType} — no preview. Save it to disk to open it yourself.
               </div>
-              <button type="button" className="attachment-action" onClick={() => save(attachment)}>
+              <button
+                type="button"
+                className="attachment-action"
+                onClick={() => saveAttachment(attachment, agentId)}
+              >
                 Save as…
               </button>
             </div>
@@ -148,20 +174,28 @@ const Attachments = ({ attachments, agentId }: Props) => {
           <div key={attachment.id} className="attachment-panel">
             {blob?.loading && <div className="attachment-panel-note">Loading…</div>}
             {blob?.error && <div className="attachment-panel-note error">{blob.error}</div>}
-            {blob?.dataUrl && (
+            {blob?.base64 && (
               <>
                 <img
                   className="attachment-image"
-                  src={blob.dataUrl}
+                  src={dataUrl(attachment, blob)}
                   alt={attachment.name}
                   title="Open in the system image viewer"
-                  onClick={() => open(attachment)}
+                  onClick={() => openAttachment(attachment, agentId)}
                 />
                 <div className="attachment-panel-actions">
-                  <button type="button" className="attachment-action" onClick={() => open(attachment)}>
+                  <button
+                    type="button"
+                    className="attachment-action"
+                    onClick={() => openAttachment(attachment, agentId)}
+                  >
                     Open externally
                   </button>
-                  <button type="button" className="attachment-action" onClick={() => save(attachment)}>
+                  <button
+                    type="button"
+                    className="attachment-action"
+                    onClick={() => saveAttachment(attachment, agentId)}
+                  >
                     Save as…
                   </button>
                 </div>

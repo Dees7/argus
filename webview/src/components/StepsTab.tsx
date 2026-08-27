@@ -117,6 +117,13 @@ const StepIcon = ({ step }: { step: Step }) => {
           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
         </svg>
       );
+    case 'attachment':
+      // Paperclip: a step that exists only to carry what the message brought.
+      return (
+        <svg className="step-icon step-icon-attachment" {...stepIconProps} stroke="currentColor">
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      );
     case 'compact':
       // Arrows folding inward — the history collapsing into a summary.
       return (
@@ -472,7 +479,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (key === 'thinking' || key === 'text' || key === 'compact' || key === 'user') {
+      if (
+        key === 'thinking' ||
+        key === 'text' ||
+        key === 'compact' ||
+        key === 'user' ||
+        key === 'attachment'
+      ) {
         types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
       } else {
         tools.push({ value: key, label: key, count });
@@ -608,7 +621,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     }
     // First non-empty line of the prompt/reply, so a turn is recognisable
     // while collapsed.
-    if (step.type === 'user' || step.type === 'text') {
+    if (step.type === 'user' || step.type === 'text' || step.type === 'attachment') {
       const first = (step.content || '')
         .split('\n')
         .find(line => line.trim() !== '');
@@ -954,10 +967,12 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                     <div className="step-usage-standalone">{usageNode}</div>
                   )}
 
-                  {/* Last in the details, below whatever the renderers drew:
-                      the blobs the message carried — pasted screenshots, files
-                      a tool handed back. */}
-                  {step.attachments && step.attachments.length > 0 && (
+                  {/* Blobs the message carried — a pasted screenshot, a file
+                      from an event the timeline otherwise skips. Tool steps
+                      are not here: their attachments belong to the tool
+                      renderer, which shows them in the pretty view and the raw
+                      base64 in the other two. */}
+                  {!hasToolBody && step.attachments && step.attachments.length > 0 && (
                     <Attachments attachments={step.attachments} agentId={step.agentId} />
                   )}
                 </div>

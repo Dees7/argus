@@ -99,7 +99,11 @@ export type StepType =
   | 'error'
   | 'subagent'
   | 'compact'
-  | 'user';
+  | 'user'
+  // An event that carries a blob and nothing the timeline renders — a queued
+  // paste, an unrecognised message shape. The step exists to keep the
+  // attachment reachable.
+  | 'attachment';
 
 /**
  * A binary blob a transcript carries inline — a pasted screenshot, an image a
