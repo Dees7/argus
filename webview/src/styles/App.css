@@ -90,6 +90,37 @@
   opacity: 0.8;
 }
 
+/* Separates the folding carets from the buttons that add rows to the timeline
+   — same row, different kind of action. */
+.view-toggle-divider {
+  width: 1px;
+  height: 12px;
+  margin: 0 4px;
+  background: var(--border);
+  opacity: 0.7;
+}
+
+/* A system-step button is a switch, not a fold: it lights up while the steps
+   it brings in are on screen, and shows how many there are either way. */
+.detail-view-toggles .system-toggle-btn.active {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.detail-view-toggles .system-toggle-btn:disabled,
+.detail-view-toggles .system-toggle-btn:disabled:hover {
+  background: none;
+  color: var(--text-dim);
+  opacity: 0.35;
+  cursor: default;
+}
+
+.view-toggle-count {
+  font-family: var(--font-code);
+  font-size: 10px;
+  line-height: 1;
+}
+
 /* Last in the meta row and pushed to the far edge, away from everything else. */
 .detail-meta > .delete-btn {
   display: inline-flex;

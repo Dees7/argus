@@ -7,6 +7,7 @@ import {
   StepDependency,
   ContextMetrics,
   SessionDetail,
+  isSystemStep,
 } from '../types/models';
 import { oncePerResponse } from '../types/usage';
 
@@ -57,20 +58,28 @@ export class AnalyzerService {
       stepCosts: [],
     };
 
+    // Rules reason about what the model did, and several of them read a window
+    // of neighbouring steps — a retry needs its failures to be consecutive, an
+    // unused read needs the next steps to be the ones that followed it. A
+    // harness event dropped in between would break those windows without
+    // meaning anything to the rule, so none of them ever sees one. Findings
+    // still address steps by `step.index`, which is unaffected by the filter.
+    const steps = session.steps.filter(step => !isSystemStep(step));
+
     // Run each rule
     for (const rule of this.rules) {
-      const findings = rule.analyze(session.steps, options);
+      const findings = rule.analyze(steps, options);
       result.findings.push(...findings);
     }
 
     // Build dependencies
-    result.dependencies = this.buildDependencies(session.steps);
+    result.dependencies = this.buildDependencies(steps);
 
     // Compute context metrics
-    result.contextMetrics = this.computeContextMetrics(session.steps, result);
+    result.contextMetrics = this.computeContextMetrics(steps, result);
 
     // Calculate step costs
-    for (const step of session.steps) {
+    for (const step of steps) {
       result.stepCosts.push({
         stepIndex: step.index,
         cost: step.cost,
@@ -285,19 +294,18 @@ class UnusedReadRule implements AnalysisRule {
   name = 'unused_read';
 
   analyze(steps: Step[]): Finding[] {
-    const readSteps = steps.filter(s => s.type === 'tool_call' && s.toolName === 'Read');
-
-    if (readSteps.length === 0) {
-      return [];
-    }
-
     // Simple heuristic: if a Read is followed immediately by another tool without any text/thinking, it might be unused
     const unusedReads: number[] = [];
     let wastedCost = 0;
 
-    for (let i = 0; i < readSteps.length; i++) {
-      const readStep = readSteps[i];
-      const nextSteps = steps.slice(readStep.index + 1, readStep.index + 5);
+    // The window is taken by position in the list handed to the rule, not by
+    // `step.index`: a rule sees the steps it is meant to reason about, which is
+    // not the whole transcript, so the two numbers only line up by accident.
+    steps.forEach((readStep, at) => {
+      if (readStep.type !== 'tool_call' || readStep.toolName !== 'Read') {
+        return;
+      }
+      const nextSteps = steps.slice(at + 1, at + 5);
 
       // If there's no text or thinking after this read, mark as potentially unused
       const hasFollowup = nextSteps.some(s => s.type === 'text' || s.type === 'thinking');
@@ -306,7 +314,7 @@ class UnusedReadRule implements AnalysisRule {
         unusedReads.push(readStep.index);
         wastedCost += readStep.cost;
       }
-    }
+    });
 
     if (unusedReads.length === 0) {
       return [];

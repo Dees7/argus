@@ -10,6 +10,7 @@ import {
   SubagentInfo,
   calculateCost,
   getModelPricing,
+  isSystemStep,
 } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
 
@@ -524,6 +525,17 @@ export class ParserService {
         }
       }
 
+      // A hook that refused a tool call. It has no message of its own — the
+      // harness records it as a bare `attachment` event — so without a step of
+      // its own the timeline shows a call whose result simply never arrives,
+      // even though the model was handed the error and changed course over it.
+      if (event.type === 'attachment' && event.attachment?.type === 'hook_blocking_error') {
+        const step = this.buildHookErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // Context compaction. Claude Code records it as a user event carrying
       // the hand-off summary that replaces the dropped history — there is no
       // assistant message for it, so give it a step of its own to keep the
@@ -787,6 +799,41 @@ export class ParserService {
   }
 
   /**
+   * Step for an `attachment/hook_blocking_error` event — a hook that blocked a
+   * tool call.
+   *
+   * `blockingError` holds the message the model was shown plus the command that
+   * produced it. The message already quotes the command in every transcript we
+   * have (`[<command>]: <stderr>`), so the command is only prepended where it
+   * does not, rather than printed twice.
+   */
+  private buildHookErrorStep(event: RawEvent, index: number): Step | null {
+    const attachment = event.attachment ?? {};
+    const raw = attachment.blockingError;
+    const detail = typeof raw === 'string' ? { blockingError: raw, command: '' } : raw ?? {};
+    const message = typeof detail.blockingError === 'string' ? detail.blockingError.trim() : '';
+    const command = typeof detail.command === 'string' ? detail.command.trim() : '';
+    // A shape we don't recognise still reaches the timeline as its own JSON —
+    // an unreadable step beats a missing one.
+    const text = message || (raw !== undefined ? JSON.stringify(raw) : '');
+    if (!text) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'hook_blocking_error',
+      systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: command && !text.includes(command) ? `$ ${command}\n\n${text}` : text,
+      cost: 0,
+    };
+  }
+
+  /**
    * The body of a `tool_result` content block, flattened to text. The `content`
    * field is either a plain string or a list of blocks: `text` for ordinary
    * output, `tool_reference` for a ToolSearch result (which names the tools it
@@ -1039,7 +1086,9 @@ export class ParserService {
           filesRead: session.filesRead,
           filesWritten: session.filesWritten,
           toolsUsed: session.toolsUsed,
-          stepCount: session.steps.length,
+          // What the agent did, so harness events are left out — this is the
+          // number the "N agent steps" toggle shows next to the spawning Task.
+          stepCount: session.steps.filter(step => !isSystemStep(step)).length,
           totalCost: session.totalCost,
           steps: session.steps,
         });

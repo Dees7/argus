@@ -4,6 +4,7 @@ import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
+import { systemKindInfo } from './systemSteps';
 import './StepsTab.css';
 
 interface Props {
@@ -49,6 +50,13 @@ const CheckIcon = () => (
 const stepIconProps = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
 const StepIcon = ({ step }: { step: Step }) => {
+  // Harness events carry the icon of their kind — the same glyph as the header
+  // button that brought them in, so the two read as one thing.
+  const systemInfo = systemKindInfo(step.systemKind);
+  if (systemInfo) {
+    return <systemInfo.Icon className="step-icon step-icon-system" size={15} />;
+  }
+
   const key = step.toolName || step.type;
   switch (key) {
     case 'Read':
@@ -502,7 +510,8 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
         key === 'text' ||
         key === 'compact' ||
         key === 'user' ||
-        key === 'attachment'
+        key === 'attachment' ||
+        key === 'system'
       ) {
         types.push({ value: key, label: key.charAt(0).toUpperCase() + key.slice(1), count });
       } else {
@@ -636,6 +645,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
   const getStepSummary = (step: Step): { text: string; mono: boolean } | null => {
     if (step.type === 'compact') {
       return { text: 'context compacted — history replaced by a summary', mono: false };
+    }
+    // A harness event: which hook (or whatever else names the source) fired,
+    // then the first line of what it said.
+    if (step.type === 'system') {
+      const first = (step.content || '').split('\n').find(line => line.trim() !== '')?.trim();
+      const text = [step.systemSource, first].filter(Boolean).join(' — ');
+      return text ? { text, mono: true } : null;
     }
     // First non-empty line of the prompt/reply, so a turn is recognisable
     // while collapsed.
@@ -798,7 +814,9 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
             (step.type === 'text' ||
               step.type === 'thinking' ||
               step.type === 'compact' ||
-              step.type === 'user') && !!step.content;
+              step.type === 'user' ||
+              step.type === 'system') && !!step.content;
+          const systemInfo = systemKindInfo(step.systemKind);
           const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
@@ -838,6 +856,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                 step.toolSuccess === false ? 'step-item-error' : '',
                 step.type === 'compact' ? 'step-item-compact' : '',
                 step.type === 'user' ? 'step-item-user' : '',
+                step.type === 'system' ? 'step-item-system' : '',
                 isAgent ? 'step-item-agent' : '',
                 linkedAgents && !allCollapsed ? 'step-item-task' : '',
                 isFirstAgentInRun ? 'step-agent-first' : '',
@@ -850,7 +869,9 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                   <StepIcon step={step} />
                   <span className="step-index">#{k}</span>
                   <span className="step-time">{formatTime(step.timestamp)}</span>
-                  <span className="step-type">{step.toolName || step.type}</span>
+                  <span className="step-type">
+                    {step.toolName || systemInfo?.label || step.type}
+                  </span>
                   {ownerAgent && (
                     <>
                       <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>

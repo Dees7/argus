@@ -38,13 +38,28 @@ export interface RawEvent {
 
   // `type: "attachment"` events. Mostly harness bookkeeping (skill listings,
   // token reminders), but `queued_command` carries a message the person typed
-  // while a turn was still running — the only record of it in the transcript.
+  // while a turn was still running — the only record of it in the transcript,
+  // and `hook_blocking_error` the error a hook handed back instead of a tool's
+  // result.
   attachment?: {
     type?: string;
     /** What was typed: a plain string, or content blocks when it has images. */
     prompt?: any;
     commandMode?: string;
     origin?: { kind?: string };
+
+    // `hook_blocking_error`
+    /** Which hook fired, as `<event>:<matcher>` — `PostToolUse:Bash`. */
+    hookName?: string;
+    hookEvent?: string;
+    /** The `tool_use` block the hook fired on. */
+    toolUseID?: string;
+    /**
+     * The refusal. An object in every transcript we have seen; the string form
+     * is tolerated because the message is the part that matters and a shape
+     * change should not lose it.
+     */
+    blockingError?: { blockingError?: string; command?: string } | string;
   };
 
   // System-specific

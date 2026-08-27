@@ -47,6 +47,10 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  // Set on steps of type `system` — which harness event the step stands for,
+  // and where it came from (a hook's name, …). See `components/systemSteps`.
+  systemKind?: string;
+  systemSource?: string;
   content?: string;
   timestamp?: string;
   // Charged once per API response: the first step of a message carries the
@@ -99,6 +103,16 @@ export interface Subagent {
   totalCost: number;
   steps: Step[];
   analysis?: AnalysisResult;
+}
+
+/**
+ * A step that records something the harness did — a hook that blocked a call,
+ * and the other kinds as they get parsed — rather than an action the model
+ * took. They are hidden until their button in the session header is pressed,
+ * and every tab that measures the session leaves them out.
+ */
+export function isSystemStep(step: Step): boolean {
+  return step.type === 'system';
 }
 
 /**

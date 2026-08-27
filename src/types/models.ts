@@ -108,7 +108,20 @@ export type StepType =
   // An event that carries a blob and nothing the timeline renders — a queued
   // paste, an unrecognised message shape. The step exists to keep the
   // attachment reachable.
-  | 'attachment';
+  | 'attachment'
+  // Something the harness did rather than the model: a hook that blocked a
+  // call, and — as they get parsed — API errors, model fallbacks and the rest.
+  // See `SystemStepKind`.
+  | 'system';
+
+/**
+ * Which harness event a `system` step stands for. Each kind is hidden until the
+ * user turns it on from its own button in the session header, so a timeline
+ * stays a record of what the model did unless asked otherwise. Adding a kind
+ * means a branch in the parser and an entry in the webview's registry
+ * (`webview/src/components/systemSteps.tsx`) — nothing else.
+ */
+export type SystemStepKind = 'hook_blocking_error';
 
 /**
  * A binary blob a transcript carries inline — a pasted screenshot, an image a
@@ -148,6 +161,14 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  /** Set on `system` steps only — which harness event this one stands for. */
+  systemKind?: SystemStepKind;
+  /**
+   * Where a `system` step came from, shown ahead of its text in the row: the
+   * hook's name for a blocked call (`PostToolUse:Bash`), and whatever names the
+   * source for the kinds added later.
+   */
+  systemSource?: string;
   usage?: Usage;
   // Cost of the API response this step came from, charged once per message:
   // the first step of a message carries it, its siblings carry 0. Summing
@@ -195,6 +216,17 @@ export interface SubagentInfo {
   totalCost: number;
   steps: Step[];
   analysis?: AnalysisResult;
+}
+
+/**
+ * A step that records a harness event rather than an action the model took.
+ * Everything that measures the session — the analysis rules, cost, context and
+ * performance — works on the list without them: they are billed to nobody, and
+ * a synthetic row sitting between two real ones would split the gap that gives
+ * a step its duration.
+ */
+export function isSystemStep(step: Step): boolean {
+  return step.type === 'system';
 }
 
 /**

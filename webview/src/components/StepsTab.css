@@ -306,6 +306,7 @@
 .step-icon-compact { color: #C8956A; }
 .step-icon-user    { color: #7EA6D9; }
 .step-icon-attachment { color: #9BB0C4; }
+.step-icon-system  { color: var(--status-error); }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {
@@ -405,6 +406,24 @@
 
 .step-item-user .step-summary {
   color: var(--text);
+}
+
+/* Harness event — a hook that blocked a call, and the kinds added later. Red
+   like a failure because that is what it was, dashed like the compaction
+   divider because nobody was billed for it and no rule counts it. */
+.step-item-system {
+  background: color-mix(in srgb, var(--status-error) 5%, transparent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--status-error) 55%, transparent);
+  border-style: dashed;
+}
+
+.step-item-system:hover {
+  background: color-mix(in srgb, var(--status-error) 9%, transparent);
+}
+
+.step-item-system .step-type {
+  color: var(--status-error);
+  opacity: 0.85;
 }
 
 .step-right {

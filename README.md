@@ -205,6 +205,29 @@ Slash commands collapse from their raw XML back to what was typed (`/context
 all`). Tool results, which the transcript also stores as user events, are not
 user turns and stay attached to the tool call that produced them.
 
+### System steps
+
+Some of what a transcript records is the harness acting, not the model: a hook
+that refused a tool call, and — as they get parsed — API errors, model
+fallbacks and the rest. They change how a session went and used to leave no
+trace in the timeline at all, so each one now becomes a `system` step.
+
+They are hidden by default. Every kind has its own button in the session
+header, to the right of the search toggle, showing how many of that kind the
+session holds; pressing it drops those steps into the timeline in place, and
+the button lights up while they are there. The state is per panel and is not
+remembered — closing the session puts the timeline back to what the model did.
+
+Parsed so far:
+
+| kind | what it is |
+| --- | --- |
+| `hook error` | `attachment/hook_blocking_error` — a hook blocked a tool call and the model was handed the error instead of a result. The row shows which hook fired (`PostToolUse:Bash`) and the message; expanding it shows the whole thing, with the command that produced it. |
+
+Only the Steps tab ever shows them. Nothing was billed for a harness event and
+no rule reasons about one, so Cost, Context, Analysis, Flow, Map, Performance
+and Insights work on the timeline without them whatever the buttons say.
+
 ### Compaction detection
 
 A compaction is recorded in the transcript as a user event carrying the hand-off
