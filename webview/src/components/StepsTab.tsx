@@ -164,16 +164,34 @@ const SortIcon = () => (
 // so the counts sit on one line with the controls instead of trailing the
 // expanded body.
 const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
-  const items: [string, number, string][] = [
-    ['in', usage.input_tokens, 'Input tokens'],
-    ['out', usage.output_tokens, 'Output tokens'],
-    ['cache r', usage.cache_read_input_tokens, 'Cache read tokens'],
-    ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens'],
+  // Reasoning tokens are a slice of `out`, not a fifth bucket, so they trail
+  // it as a sub-item. Shown only when the model actually reasoned: the field
+  // is absent on older transcripts and zero on most messages, and "think 0"
+  // on every row is noise.
+  const thinking = usage.output_tokens_details?.thinking_tokens ?? 0;
+
+  const items: [string, number, string, boolean][] = [
+    ['in', usage.input_tokens, 'Input tokens', false],
+    ['out', usage.output_tokens, 'Output tokens', false],
+    ...(thinking > 0
+      ? ([['think', thinking, 'Reasoning tokens — part of the output count, not billed on top of it', true]] as [
+          string,
+          number,
+          string,
+          boolean,
+        ][])
+      : []),
+    ['cache r', usage.cache_read_input_tokens, 'Cache read tokens', false],
+    ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens', false],
   ];
   return (
     <span className="step-usage">
-      {items.map(([label, value, title]) => (
-        <span key={label} className="step-usage-item" title={title}>
+      {items.map(([label, value, title, isSub]) => (
+        <span
+          key={label}
+          className={isSub ? 'step-usage-item step-usage-item-sub' : 'step-usage-item'}
+          title={title}
+        >
           <span className="step-usage-label">{label}</span>
           <span className="step-usage-value">{(value ?? 0).toLocaleString()}</span>
         </span>

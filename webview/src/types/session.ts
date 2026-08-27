@@ -69,6 +69,11 @@ export interface TokenUsage {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
+  // Part of `output_tokens`, not extra on top of it: the reasoning tokens are
+  // already billed in the output count. Missing on older transcripts.
+  output_tokens_details?: {
+    thinking_tokens?: number;
+  };
   speed?: string;
 }
 

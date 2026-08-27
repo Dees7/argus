@@ -428,12 +428,17 @@ export class ParserService {
     const toolCallByUseId = new Map<string, Partial<Step>>();
 
     // One API response is written as several JSONL events — one per content
-    // block — each repeating the same `message.id` and the same `usage`.
-    // Charging every event would multiply the bill by the block count, so a
-    // message is priced the first time its id is seen and its siblings cost 0.
+    // block — each repeating the same `message.id`. Charging every event would
+    // multiply the bill by the block count, so a message is priced the first
+    // time its id is seen and its siblings cost 0.
     const chargedMessages = new Set<string>();
     // Cost priced but not yet attached to a step, keyed by message id.
     const unbilled = new Map<string, number>();
+    // The `usage` those events carry is *not* identical: input and cache counts
+    // repeat, but `output_tokens` accumulates as the response streams, so early
+    // events hold a partial count and only the last one is final. Pricing off
+    // whichever event happens to come first therefore undercharges output.
+    const finalUsage = this.findFinalUsage(events);
     // Messages that render to nothing. With thinking `display: "omitted"` —
     // the default on current models — a reasoning turn is recorded as a
     // `thinking` block with empty text, so a message can consist solely of
@@ -539,7 +544,12 @@ export class ParserService {
 
       // Process assistant messages
       if (event.type === 'assistant' && event.message) {
-        const usage = event.message.usage;
+        // Always the message's final counts, never this event's partial ones,
+        // so every step of a response reports the same usage and any consumer
+        // that de-duplicates by message id agrees with the total.
+        const usage =
+          (event.message.id ? finalUsage.get(event.message.id) : undefined) ??
+          event.message.usage;
         const eventModel =
           event.message.model && event.message.model !== '<synthetic>'
             ? event.message.model
@@ -1159,6 +1169,37 @@ export class ParserService {
         .join('\n');
     }
     return '';
+  }
+
+  /**
+   * Final `usage` of every assistant message, keyed by message id.
+   *
+   * A response is spread over one event per content block, and `output_tokens`
+   * grows across them as the response streams — 4, 4, 330 for one message is a
+   * real sequence from a transcript. Only the last event carries the complete
+   * count, so it is the one that must be priced; the earlier ones are
+   * snapshots taken mid-stream. Input and cache counts are settled before the
+   * first block and repeat unchanged, so taking the whole last object rather
+   * than merging field by field loses nothing.
+   *
+   * Requires a pass of its own because the last event of a message is only
+   * knowable after the walk has passed it.
+   */
+  private findFinalUsage(events: RawEvent[]): Map<string, any> {
+    const final = new Map<string, any>();
+
+    for (const event of events) {
+      if (event.type !== 'assistant' || !event.message?.usage) {
+        continue;
+      }
+      const id = event.message.id ?? '';
+      if (id === '') {
+        continue;
+      }
+      final.set(id, event.message.usage);
+    }
+
+    return final;
   }
 
   /**

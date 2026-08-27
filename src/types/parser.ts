@@ -96,6 +96,11 @@ export interface UsageInfo {
   output_tokens: number;
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
+  // Read-only decomposition of `output_tokens`, not an addition to it: the
+  // reasoning tokens are already billed inside the output count.
+  output_tokens_details?: {
+    thinking_tokens?: number;
+  };
 }
 
 export interface ProgressData {

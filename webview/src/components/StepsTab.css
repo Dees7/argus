@@ -585,6 +585,17 @@
   opacity: 0.85;
 }
 
+/* A breakdown of the count before it rather than a peer of it: pulled tight
+   against `out` and dimmed so the row still reads as four buckets. */
+.step-usage-item-sub {
+  margin-left: -6px;
+  opacity: 0.7;
+}
+
+.step-usage-item-sub .step-usage-label::before {
+  content: '· ';
+}
+
 /* Fallback host when the step has no renderer to hang the counts on. */
 .step-usage-standalone {
   padding: 6px 10px;

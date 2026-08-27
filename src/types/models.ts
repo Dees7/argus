@@ -161,7 +161,16 @@ export interface Step {
   globalIndex?: number;
 }
 
-export interface Usage extends CostUsage {}
+export interface Usage extends CostUsage {
+  // How many of the billed output tokens the model spent on internal
+  // reasoning. A breakdown of `output_tokens`, never an addition to it —
+  // always <= output_tokens — so it stays out of `CostUsage` and out of every
+  // cost calculation. Absent on transcripts written before the field existed,
+  // and on messages that did no thinking.
+  output_tokens_details?: {
+    thinking_tokens?: number;
+  };
+}
 
 export interface SubagentInfo {
   agentId: string;
