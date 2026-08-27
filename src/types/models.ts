@@ -2,7 +2,8 @@ import type { CostUsage } from './pricing';
 
 // Filter & grouping types
 
-export type GroupMode = 'none' | 'project' | 'model' | 'date';
+export const GROUP_MODES = ['none', 'project', 'model', 'date'] as const;
+export type GroupMode = (typeof GROUP_MODES)[number];
 export type DatePreset = 'all' | '1h' | '3h' | '6h' | '24h' | '7d' | '30d' | 'custom';
 
 export interface FilterState {
@@ -16,6 +17,10 @@ export interface FilterState {
   datePreset: DatePreset;
   customDateFrom?: number;
   customDateTo?: number;
+  /**
+   * How the list is split into headings. Persisted in the extension's global
+   * state, so the choice follows the user across windows and workspaces.
+   */
   groupMode: GroupMode;
   /**
    * Keep only sessions whose working directory belongs to a folder of the

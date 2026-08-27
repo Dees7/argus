@@ -7,7 +7,14 @@ import { SearchService } from './services/searchService';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
-import { FilterState, DEFAULT_FILTER_STATE, GroupMode, DatePreset, SessionSummary } from './types/models';
+import {
+  FilterState,
+  DEFAULT_FILTER_STATE,
+  GROUP_MODES,
+  GroupMode,
+  DatePreset,
+  SessionSummary,
+} from './types/models';
 import { collectModelFilterOptions, modelFamilyKey } from './types/modelFamily';
 import { getClaudeConfigDir } from './utils/claudePaths';
 
@@ -26,13 +33,24 @@ export function activate(context: vscode.ExtensionContext) {
     analyzerService
   );
 
-  // Filter state. The "current project only" toggle is remembered in the
-  // extension's global state (VS Code's own storage, not any file in the
-  // workspace), so it survives reloads and applies in every window.
+  // Filter state. The "current project only" toggle and the grouping mode are
+  // remembered in the extension's global state (VS Code's own storage, not any
+  // file in the workspace), so they survive reloads and apply in every window.
   const PROJECT_FILTER_KEY = 'argus.filter.onlyCurrentProject';
+  const GROUP_MODE_KEY = 'argus.group.mode';
+
+  /** Stored modes come from an earlier install, so treat unknown ones as default. */
+  function storedGroupMode(): GroupMode {
+    const stored = context.globalState.get<string>(GROUP_MODE_KEY);
+    return GROUP_MODES.includes(stored as GroupMode)
+      ? (stored as GroupMode)
+      : DEFAULT_FILTER_STATE.groupMode;
+  }
+
   let filterState: FilterState = {
     ...DEFAULT_FILTER_STATE,
     onlyCurrentProject: context.globalState.get<boolean>(PROJECT_FILTER_KEY, false),
+    groupMode: storedGroupMode(),
   };
   let allSessions: SessionSummary[] = [];
 
@@ -305,6 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   function setGroupMode(mode: GroupMode) {
     filterState.groupMode = mode;
+    void context.globalState.update(GROUP_MODE_KEY, mode);
     syncContextKeys();
     refreshList();
   }
