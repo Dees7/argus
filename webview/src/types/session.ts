@@ -188,9 +188,9 @@ export interface Finding {
   description: string;
   wastedCost?: number;
   toolName?: string;
-  // The analyzer emits `steps`; older/derived shapes use `affectedSteps`.
+  // Local step indices within the session the finding was analyzed against —
+  // resolve them to `globalIndex` before navigating.
   steps?: number[];
-  affectedSteps?: number[];
 }
 
 export type ViewMode = 'overview' | 'steps' | 'findings' | 'files' | 'subagents' | 'cost' | 'context';

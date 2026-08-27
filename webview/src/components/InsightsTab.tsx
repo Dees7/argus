@@ -4,10 +4,11 @@ import './InsightsTab.css';
 
 interface Props {
   steps: Step[];
+  flatSteps: Step[];
   analysis?: AnalysisResult;
   filesRead: string[];
   filesWritten: string[];
-  onGoToStep: (index: number) => void;
+  onGoToStep: (globalIndex: number) => void;
 }
 
 interface Insight {
@@ -16,10 +17,24 @@ interface Insight {
   title: string;
   description: string;
   potentialSavings?: number;
+  // Already resolved to globalIndex — the step badges navigate with these.
   affectedSteps?: number[];
 }
 
-const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: Props) => {
+const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGoToStep }: Props) => {
+  // Findings and main-session steps carry local indices; the timeline navigates
+  // by globalIndex, so map one to the other before rendering step badges.
+  const toGlobal = useMemo(() => {
+    const main = new Map<number, number>();
+    for (const s of flatSteps) {
+      if (!s.agentId) main.set(s.index, s.globalIndex ?? s.index);
+    }
+    return (localIndices: number[]): number[] =>
+      localIndices
+        .map(idx => main.get(idx))
+        .filter((gi): gi is number => gi !== undefined);
+  }, [flatSteps]);
+
   const insights = useMemo((): Insight[] => {
     const results: Insight[] = [];
 
@@ -56,7 +71,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         title: `${retryLoops.length} Retry Loop${retryLoops.length > 1 ? 's' : ''} Detected`,
         description: `Operations were retried multiple times before succeeding. Consider adding error handling, validation, or breaking complex operations into smaller steps.`,
         potentialSavings: totalWasted,
-        affectedSteps: retryLoops.flatMap(f => f.affectedSteps || []),
+        affectedSteps: toGlobal(retryLoops.flatMap(f => f.steps || [])),
       });
     }
 
@@ -68,7 +83,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         icon: '⚠️',
         title: 'High Context Pressure Detected',
         description: `Token usage exceeded healthy thresholds during execution. Consider breaking the task into smaller sub-tasks or using subagents to manage context more efficiently.`,
-        affectedSteps: pressureFindings.flatMap(f => f.affectedSteps || []),
+        affectedSteps: toGlobal(pressureFindings.flatMap(f => f.steps || [])),
       });
     }
 
@@ -82,7 +97,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         title: `${compactionFindings.length} Context Compaction${compactionFindings.length > 1 ? 's' : ''} Occurred`,
         description: `Context window was compacted to free up space. ${totalWasted > 0 ? `$${totalWasted.toFixed(4)} was spent re-reading files after compaction.` : 'No files needed to be re-read.'}`,
         potentialSavings: totalWasted,
-        affectedSteps: compactionFindings.flatMap(f => f.affectedSteps || []),
+        affectedSteps: toGlobal(compactionFindings.flatMap(f => f.steps || [])),
       });
     }
 
@@ -146,7 +161,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
         icon: '🐚',
         title: `${bashFailures.length} Failed Bash Command${bashFailures.length > 1 ? 's' : ''}`,
         description: `Command failures often indicate environment issues, missing dependencies, or incorrect assumptions. Review failed commands and consider adding validation steps.`,
-        affectedSteps: bashFailures.map(s => s.index),
+        affectedSteps: toGlobal(bashFailures.map(s => s.index)),
       });
     }
 
@@ -171,7 +186,7 @@ const InsightsTab = ({ steps, analysis, filesRead, filesWritten, onGoToStep }: P
     }
 
     return results;
-  }, [steps, analysis, filesRead, filesWritten]);
+  }, [steps, analysis, filesRead, filesWritten, toGlobal]);
 
   const renderInsight = (insight: Insight, index: number) => (
     <div key={index} className={`insight-card ${insight.type}`}>

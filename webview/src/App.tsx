@@ -365,6 +365,7 @@ function App() {
         {activeTab === 'insights' && (
           <InsightsTab
             steps={session.steps}
+            flatSteps={flatSteps}
             analysis={session.analysis}
             filesRead={session.filesRead}
             filesWritten={session.filesWritten}

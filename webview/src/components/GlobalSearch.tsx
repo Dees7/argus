@@ -89,7 +89,7 @@ const GlobalSearch = ({ steps, findings, filesRead, filesWritten, onGoToStep, on
           title: finding.title,
           description: finding.description,
           index: idx,
-          stepIndex: finding.affectedSteps?.[0],
+          stepIndex: finding.steps?.[0],
         });
       }
     });

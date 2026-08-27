@@ -19,7 +19,7 @@ const renderFinding = (
   resolveStep: StepResolver,
   onGoToStep: (gi: number) => void
 ) => {
-  const affected = finding.affectedSteps ?? finding.steps ?? [];
+  const affected = finding.steps ?? [];
   return (
     <div key={i} className={`finding-card ${finding.severity}`}>
       <div className="finding-header">

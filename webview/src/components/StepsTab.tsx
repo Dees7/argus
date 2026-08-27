@@ -460,7 +460,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     }
     const map = new Map<number, Finding[]>();
     findings.forEach(f => {
-      f.affectedSteps?.forEach(idx => {
+      f.steps?.forEach(idx => {
         const gi = mainByIndex.get(idx);
         if (gi === undefined) return;
         if (!map.has(gi)) map.set(gi, []);
@@ -486,7 +486,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     steps.forEach(s => {
       if (s.toolSuccess === true) success++;
       if (s.toolSuccess === false) failed++;
-      if (stepFindings.has(s.index)) issues++;
+      if (stepFindings.has(keyOf(s))) issues++;
     });
     return { success, failed, issues };
   }, [steps, stepFindings]);
