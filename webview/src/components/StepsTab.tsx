@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Step, Subagent, Finding, TokenUsage, spawnKey } from '../types/session';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
+import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
 import './StepsTab.css';
 
@@ -611,7 +612,14 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
       const first = (step.content || '')
         .split('\n')
         .find(line => line.trim() !== '');
-      return first ? { text: first.trim(), mono: false } : null;
+      if (first) return { text: first.trim(), mono: false };
+      // A pasted screenshot with no caption: the row would otherwise read as
+      // an empty turn.
+      const count = step.attachments?.length ?? 0;
+      if (count > 0) {
+        return { text: count === 1 ? '1 attachment' : `${count} attachments`, mono: false };
+      }
+      return null;
     }
     if (!step.toolName || !step.toolInput) return null;
 
@@ -944,6 +952,13 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
                       token counts. */}
                   {usageNode && !hasToolBody && !hasContentBody && (
                     <div className="step-usage-standalone">{usageNode}</div>
+                  )}
+
+                  {/* Last in the details, below whatever the renderers drew:
+                      the blobs the message carried — pasted screenshots, files
+                      a tool handed back. */}
+                  {step.attachments && step.attachments.length > 0 && (
+                    <Attachments attachments={step.attachments} agentId={step.agentId} />
                   )}
                 </div>
               )}

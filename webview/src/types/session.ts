@@ -20,9 +20,26 @@ export interface SessionDetail {
   analysis?: AnalysisResult;
 }
 
+/**
+ * A blob stored inline in the transcript — a pasted screenshot, an image a
+ * tool returned, any other base64 block. Only this description reaches the
+ * webview; the bytes are fetched from the host when a badge is opened.
+ */
+export interface Attachment {
+  /** Locator back into the transcript: `<event uuid>#<block path>`. */
+  id: string;
+  kind: 'image' | 'file';
+  mediaType: string;
+  /** Decoded size in bytes. */
+  size: number;
+  /** Suggested file name for saving/opening. */
+  name: string;
+}
+
 export interface Step {
   index: number;
   type: string;
+  attachments?: Attachment[];
   // Identifies the API response a step came from; several steps share one.
   messageId?: string;
   toolName?: string;

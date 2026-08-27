@@ -101,6 +101,30 @@ export type StepType =
   | 'compact'
   | 'user';
 
+/**
+ * A binary blob a transcript carries inline — a pasted screenshot, an image a
+ * tool returned, anything else stored as a base64 `image`/`document` block.
+ *
+ * Only the description travels to the webview; the bytes stay on disk until
+ * the user opens the badge, because a single screenshot is ~200 KB of base64
+ * and a browser-driving session can hold dozens.
+ */
+export interface Attachment {
+  /**
+   * Locator, not a hash: `<event uuid>#<block path>`, where the path indexes
+   * into `message.content` and, for a blob inside a tool result, into that
+   * block's own `content` (`"3.1"`). Re-resolved against the file on demand.
+   */
+  id: string;
+  /** Images can be previewed inline; everything else can only be saved. */
+  kind: 'image' | 'file';
+  mediaType: string;
+  /** Decoded size, derived from the base64 length. */
+  size: number;
+  /** Suggested file name, used for the save dialog and the temp file. */
+  name: string;
+}
+
 export interface Step {
   index: number;
   type: StepType;
@@ -108,6 +132,8 @@ export interface Step {
   uuid: string;
   messageId: string;
   content: string;
+  /** Blobs carried by this step's message — see `Attachment`. */
+  attachments?: Attachment[];
   toolName?: string;
   toolInput?: any;
   toolResult?: string;

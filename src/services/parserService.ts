@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as readline from 'readline';
 import { RawEvent } from '../types/parser';
 import {
+  Attachment,
   HistoryEntry,
   SessionDetail,
   Step,
@@ -53,6 +54,36 @@ const HEAD_SCAN_LINES = 200;
  * sessions; anything past that falls back to the title seen in the head.
  */
 const TAIL_SCAN_BYTES = 256 * 1024;
+
+/**
+ * File extension for an attachment's media type. The subtype is the name in
+ * every case that matters (`image/png`, `application/pdf`), with the handful
+ * of types whose subtype is not a usable extension spelled out.
+ */
+const MEDIA_TYPE_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/svg+xml': 'svg',
+  'text/plain': 'txt',
+  'application/octet-stream': 'bin',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
+
+function extensionFor(mediaType: string): string {
+  const known = MEDIA_TYPE_EXTENSIONS[mediaType];
+  if (known) {
+    return known;
+  }
+  const subtype = mediaType.split('/')[1] ?? '';
+  const cleaned = subtype.replace(/^x-/, '').replace(/[^a-z0-9]/gi, '');
+  return cleaned || 'bin';
+}
+
+/** Decoded byte count of a base64 payload, without decoding it. */
+function base64Size(data: string): number {
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
 
 interface QuickMetadata {
   model: string;
@@ -345,7 +376,11 @@ export class ParserService {
 
         if (!isToolResult) {
           const text = this.extractUserInput(content);
-          if (text) {
+          // A pasted screenshot with no caption is a turn too: the message
+          // carries an image block and nothing else, so keying the step off
+          // the text alone would drop it from the timeline entirely.
+          const attachments = this.collectAttachments(event.uuid, content, steps.length);
+          if (text || attachments.length > 0) {
             steps.push({
               index: steps.length,
               type: 'user',
@@ -353,6 +388,7 @@ export class ParserService {
               uuid: event.uuid,
               messageId: event.message?.id ?? '',
               content: text,
+              attachments: attachments.length > 0 ? attachments : undefined,
               cost: 0,
             });
           }
@@ -512,18 +548,23 @@ export class ParserService {
         const blocks: any[] = Array.isArray(event.message?.content)
           ? (event.message!.content as any[])
           : [];
-        const resultBlocks = blocks.filter((b) => b && b.type === 'tool_result');
+        // Positions are carried along with the blocks: an attachment locator
+        // has to index into `message.content` as it sits on disk, not into
+        // the filtered list.
+        const resultBlocks = blocks
+          .map((block, at) => ({ block, at }))
+          .filter(({ block }) => block && block.type === 'tool_result');
         const hasLegacyResult =
           event.toolUseResult !== undefined && !!event.sourceToolAssistantUUID;
 
         if (resultBlocks.length > 0 || hasLegacyResult) {
           // No blocks at all → one pass driven by `toolUseResult` alone.
-          const entries: any[] = resultBlocks.length > 0 ? resultBlocks : [null];
+          const entries = resultBlocks.length > 0 ? resultBlocks : [{ block: null as any, at: -1 }];
           // `toolUseResult` describes the turn as a whole, so it can only be
           // attributed when the turn carries a single result.
           const legacyApplies = hasLegacyResult && entries.length === 1;
 
-          for (const block of entries) {
+          for (const { block, at } of entries) {
             const toolStep =
               (block?.tool_use_id ? toolCallByUseId.get(block.tool_use_id) : undefined) ??
               (event.sourceToolAssistantUUID
@@ -548,6 +589,29 @@ export class ParserService {
               isError = true;
             }
             steps[toolStep.index].toolSuccess = !isError;
+
+            // Screenshots and other blobs a tool handed back. They belong to
+            // the call that produced them, so they hang off the tool step
+            // rather than the user event that transported them.
+            if (at >= 0) {
+              const blobs = this.collectAttachments(
+                event.uuid,
+                block.content,
+                toolStep.index,
+                `${at}.`
+              );
+              if (blobs.length > 0) {
+                const existing = steps[toolStep.index].attachments ?? [];
+                // A transcript can repeat a result event; ids are locators, so
+                // the repeat describes the same bytes and must not be listed
+                // twice.
+                const seen = new Set(existing.map(a => a.id));
+                steps[toolStep.index].attachments = [
+                  ...existing,
+                  ...blobs.filter(a => !seen.has(a.id)),
+                ];
+              }
+            }
           }
         }
       }
@@ -612,11 +676,132 @@ export class ParserService {
   }
 
   /**
+   * Describe every base64 blob in a message body, without copying the bytes.
+   * `pathPrefix` is set when the blocks sit one level down, inside a
+   * `tool_result`, so the locator still points at the raw block.
+   */
+  private collectAttachments(
+    uuid: string,
+    content: any,
+    stepIndex: number,
+    pathPrefix = ''
+  ): Attachment[] {
+    if (!Array.isArray(content)) {
+      return [];
+    }
+
+    const attachments: Attachment[] = [];
+    content.forEach((block: any, i: number) => {
+      if (!block || (block.type !== 'image' && block.type !== 'document')) {
+        return;
+      }
+      const source = block.source;
+      if (!source || source.type !== 'base64' || typeof source.data !== 'string') {
+        return;
+      }
+
+      const mediaType =
+        typeof source.media_type === 'string' ? source.media_type : 'application/octet-stream';
+      const path = `${pathPrefix}${i}`;
+      attachments.push({
+        id: `${uuid}#${path}`,
+        kind: mediaType.startsWith('image/') ? 'image' : 'file',
+        mediaType,
+        size: base64Size(source.data),
+        // Position rather than a counter: it keeps the name unique even when
+        // one step collects blobs from several result blocks.
+        name: `step-${stepIndex}-${path.replace(/\./g, '-')}.${extensionFor(mediaType)}`,
+      });
+    });
+
+    return attachments;
+  }
+
+  /**
+   * Fetch one attachment's bytes back out of a transcript, given the locator
+   * `collectAttachments` handed the webview. Returns null when the line is
+   * gone or the path no longer points at a base64 block.
+   */
+  async readAttachment(
+    filePath: string,
+    id: string
+  ): Promise<{ mediaType: string; data: string } | null> {
+    const hash = id.lastIndexOf('#');
+    if (hash < 0) {
+      return null;
+    }
+    const uuid = id.slice(0, hash);
+    const path = id.slice(hash + 1).split('.').map(Number);
+    if (path.length === 0 || path.some(n => !Number.isInteger(n) || n < 0)) {
+      return null;
+    }
+
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+    try {
+      for await (const line of rl) {
+        // Cheap reject: parsing every line of a multi-megabyte transcript to
+        // find one event costs far more than the substring scan.
+        if (!line.includes(`"${uuid}"`)) {
+          continue;
+        }
+
+        let event: any;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (event?.uuid !== uuid) {
+          continue;
+        }
+
+        let block: any = event.message?.content;
+        for (let i = 0; i < path.length; i++) {
+          if (!Array.isArray(block)) {
+            return null;
+          }
+          block = block[path[i]];
+          // Anything left in the path descends through the block's own
+          // content — that is where a tool result keeps its blobs.
+          if (i < path.length - 1) {
+            block = block?.content;
+          }
+        }
+
+        const source = block?.source;
+        if (!source || source.type !== 'base64' || typeof source.data !== 'string') {
+          return null;
+        }
+        return {
+          mediaType:
+            typeof source.media_type === 'string' ? source.media_type : 'application/octet-stream',
+          data: source.data,
+        };
+      }
+    } finally {
+      rl.close();
+      fileStream.destroy();
+    }
+
+    return null;
+  }
+
+  /**
    * Resolve the directory Claude Code writes sub-agent JSONLs into for a given
    * session. Layout is `<projectDir>/<sessionId>/subagents/`.
    */
   getSubagentsDir(projectDir: string, sessionId: string): string {
     return path.join(projectDir, sessionId, 'subagents');
+  }
+
+  /**
+   * Transcript of one sub-agent. The file keeps the `agent-` prefix that the
+   * canonical id stored internally does not.
+   */
+  getSubagentFilePath(projectDir: string, sessionId: string, agentId: string): string {
+    return path.join(this.getSubagentsDir(projectDir, sessionId), `agent-${agentId}.jsonl`);
   }
 
   /**
