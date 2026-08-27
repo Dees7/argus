@@ -495,6 +495,30 @@ export class ParserService {
         }
       }
 
+      // A message typed while a turn was still running. Claude Code absorbs it
+      // mid-turn and never replays it as a user event, so this `attachment`
+      // record is the only place it exists — without this the text is simply
+      // missing from the timeline, image and all. The harness queues its own
+      // commands the same way (background-task notifications), but those are
+      // `<task-notification>` wrappers that clean away to nothing.
+      if (event.type === 'attachment' && event.attachment?.type === 'queued_command') {
+        const text = this.extractUserInput(event.attachment.prompt);
+        const attachments = claimAttachments(blobs, 'attachment.prompt');
+        if (text || attachments.length > 0) {
+          const step: Step = {
+            index: steps.length,
+            type: 'user',
+            timestamp: new Date(event.timestamp),
+            uuid: event.uuid,
+            messageId: '',
+            content: text,
+            cost: 0,
+          };
+          attachTo(step, attachments);
+          steps.push(step);
+        }
+      }
+
       // Context compaction. Claude Code records it as a user event carrying
       // the hand-off summary that replaces the dropped history — there is no
       // assistant message for it, so give it a step of its own to keep the

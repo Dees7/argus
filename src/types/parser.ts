@@ -36,6 +36,17 @@ export interface RawEvent {
   // Progress-specific
   data?: any;
 
+  // `type: "attachment"` events. Mostly harness bookkeeping (skill listings,
+  // token reminders), but `queued_command` carries a message the person typed
+  // while a turn was still running — the only record of it in the transcript.
+  attachment?: {
+    type?: string;
+    /** What was typed: a plain string, or content blocks when it has images. */
+    prompt?: any;
+    commandMode?: string;
+    origin?: { kind?: string };
+  };
+
   // System-specific
   subtype?: string;
   durationMs?: number;
