@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Step } from '../types/session';
+import { oncePerResponse } from '../../../src/types/usage';
 
 interface Props {
   steps: Step[];
@@ -21,7 +22,9 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
     let cumInput = 0, cumOutput = 0, cumCache = 0;
     const pressureSet = new Set(pressureZones ?? []);
 
-    for (const step of steps) {
+    // One point per API response: plotting every step would step the curve up
+    // once per content block and end the session at an inflated total.
+    for (const step of oncePerResponse(steps)) {
       if (!step.usage) continue;
       cumInput += (step.usage.input_tokens ?? 0) + (step.usage.cache_creation_input_tokens ?? 0);
       cumOutput += step.usage.output_tokens ?? 0;

@@ -8,6 +8,7 @@ import {
   ContextMetrics,
   SessionDetail,
 } from '../types/models';
+import { oncePerResponse } from '../types/usage';
 
 export interface AnalysisOptions {
   /**
@@ -170,32 +171,32 @@ export class AnalyzerService {
       compactionPoints: [],
     };
 
-    let stepsWithUsage = 0;
+    // One entry per API response rather than per step: `usage` repeats across
+    // every step a response produced, so walking `steps` counts it twice.
+    const responses = oncePerResponse(steps);
 
-    for (const step of steps) {
-      if (!step.usage) {
-        continue;
-      }
+    for (const step of responses) {
+      const usage = step.usage!;
+      const inputTokens = usage.input_tokens + usage.cache_creation_input_tokens;
 
-      stepsWithUsage++;
-      const inputTokens = step.usage.input_tokens + step.usage.cache_creation_input_tokens;
-
-      metrics.totalInputTokens += step.usage.input_tokens;
-      metrics.totalOutputTokens += step.usage.output_tokens;
-      metrics.totalCacheRead += step.usage.cache_read_input_tokens;
-      metrics.totalCacheCreation += step.usage.cache_creation_input_tokens;
+      metrics.totalInputTokens += usage.input_tokens;
+      metrics.totalOutputTokens += usage.output_tokens;
+      metrics.totalCacheRead += usage.cache_read_input_tokens;
+      metrics.totalCacheCreation += usage.cache_creation_input_tokens;
 
       if (inputTokens > metrics.peakInputTokens) {
         metrics.peakInputTokens = inputTokens;
       }
     }
 
-    if (stepsWithUsage === 0) {
+    if (responses.length === 0) {
       return undefined;
     }
 
+    // Divided by the response count to match the numerator — per-response
+    // totals over a per-step count would mix the two.
     metrics.avgTokensPerStep = Math.floor(
-      (metrics.totalInputTokens + metrics.totalCacheCreation) / stepsWithUsage
+      (metrics.totalInputTokens + metrics.totalCacheCreation) / responses.length
     );
 
     const totalAll = metrics.totalInputTokens + metrics.totalCacheRead + metrics.totalCacheCreation;
@@ -203,9 +204,7 @@ export class AnalyzerService {
       metrics.cacheHitRatio = metrics.totalCacheRead / totalAll;
     }
 
-    if (stepsWithUsage > 0) {
-      metrics.tokenBurnRate = metrics.totalOutputTokens / stepsWithUsage;
-    }
+    metrics.tokenBurnRate = metrics.totalOutputTokens / responses.length;
 
     // Extract pressure zones and compaction points from findings
     for (const finding of result.findings) {
