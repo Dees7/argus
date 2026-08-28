@@ -700,7 +700,11 @@ interface ToolRendererProps {
 const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   const [view, setView] = useState<View>('pretty');
   const tool = step.toolName;
-  const renderer = tool ? RENDERERS[tool] : undefined;
+  // Capitalised because it is rendered as an element below, not called: a
+  // renderer with hooks of its own needs its own fiber, or its hooks land in
+  // this component's hook list and vanish the moment the view switches away
+  // from pretty.
+  const Renderer = tool ? RENDERERS[tool] : undefined;
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
   const attachments = step.attachments ?? [];
 
@@ -710,7 +714,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   // A result that came back as a picture or a file is already parsed: showing
   // it is showing the attachment. So a tool with no renderer of its own still
   // gets a pretty view when it returned one.
-  const hasPretty = !!renderer || attachments.length > 0;
+  const hasPretty = !!Renderer || attachments.length > 0;
   // Tools without a pretty renderer fall back to Raw, but keep Wrap available.
   const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
@@ -783,7 +787,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
 
       {active === 'pretty' ? (
         <>
-          {renderer?.({ input: step.toolInput, result: parsed.value })}
+          {Renderer && <Renderer input={step.toolInput} result={parsed.value} />}
           {attachments.length > 0 && (
             <Attachments attachments={attachments} agentId={step.agentId} />
           )}
