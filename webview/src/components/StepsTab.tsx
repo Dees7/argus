@@ -46,6 +46,36 @@ const CheckIcon = () => (
   </svg>
 );
 
+/**
+ * What the tool/type dropdown counts and filters on. A tool goes by its name and
+ * everything else by its step type — except a harness event, which goes by its
+ * kind: the header buttons bring those in one kind at a time, so a single
+ * "System" entry would offer to filter on a mixture of things the user never
+ * asked to see. The prefix keeps a kind from colliding with a tool of the same
+ * name; `filterKeyLabel` turns it back into something readable.
+ */
+const SYSTEM_FILTER_PREFIX = 'system:';
+
+const filterKeyOf = (step: Step): string =>
+  step.toolName ||
+  (step.type === 'system' && step.systemKind
+    ? `${SYSTEM_FILTER_PREFIX}${step.systemKind}`
+    : step.type);
+
+/**
+ * A filter key as it is shown. Tool names are already their own label; a
+ * `system:<kind>` becomes its header button's wording, capitalised.
+ */
+const filterKeyLabel = (key: string): string => {
+  if (!key.startsWith(SYSTEM_FILTER_PREFIX)) {
+    return key;
+  }
+  const kind = key.slice(SYSTEM_FILTER_PREFIX.length);
+  // A kind this build doesn't know still gets a row, spelled out of its own name.
+  const text = systemKindInfo(kind)?.plural ?? kind.replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
 /* ── Step icons per tool/type ── */
 const stepIconProps = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
@@ -482,11 +512,22 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
   const toolCounts = useMemo(() => {
     const counts = new Map<string, number>();
     steps.forEach(s => {
-      const key = s.toolName || s.type;
+      const key = filterKeyOf(s);
       counts.set(key, (counts.get(key) || 0) + 1);
     });
     return counts;
   }, [steps]);
+
+  // A filter for something the timeline no longer holds hides every row and
+  // says nothing about why — which is exactly what turning a harness kind back
+  // off would do while its kind was the selected filter. So a selection lasts
+  // only as long as the thing it selects.
+  useEffect(() => {
+    setToolFilter(prev => {
+      const next = new Set([...prev].filter(key => toolCounts.has(key)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [toolCounts]);
 
   // Status counts
   const statusCounts = useMemo(() => {
@@ -505,7 +546,11 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     const tools: DropdownItem[] = [];
 
     toolCounts.forEach((count, key) => {
-      if (
+      // Only the kinds currently on screen are in `toolCounts`, so a kind
+      // appears among the types exactly while its header button is lit.
+      if (key.startsWith(SYSTEM_FILTER_PREFIX)) {
+        types.push({ value: key, label: filterKeyLabel(key), count });
+      } else if (
         key === 'thinking' ||
         key === 'text' ||
         key === 'compact' ||
@@ -569,10 +614,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
 
     // Tool filter (multi-select)
     if (toolFilter.size > 0) {
-      result = result.filter(s => {
-        const key = s.toolName || s.type;
-        return toolFilter.has(key);
-      });
+      result = result.filter(s => toolFilter.has(filterKeyOf(s)));
     }
 
     // Status filter
@@ -718,7 +760,14 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
     }
   };
 
-  const toolLabel = toolFilter.size === 0 ? 'Tool' : toolFilter.size === 1 ? [...toolFilter][0] : `${toolFilter.size} tools`;
+  // A tool's key is its name and reads fine on the button; a harness kind's is
+  // the key filtering runs on, not what a person calls it.
+  const toolLabel =
+    toolFilter.size === 0
+      ? 'Tool'
+      : toolFilter.size === 1
+        ? filterKeyLabel([...toolFilter][0])
+        : `${toolFilter.size} tools`;
   const statusLabel = statusFilter === 'all' ? 'Status' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
   const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== defaultSortMode;
 

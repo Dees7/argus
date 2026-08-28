@@ -18,7 +18,11 @@ export interface RawEvent {
   message?: AssistantMessage;
   requestId?: string;
   isApiErrorMessage?: boolean;
-  error?: string;
+  /**
+   * What a request failed with, on a `system`/`api_error` event. A string on
+   * assistant events that carry one.
+   */
+  error?: ApiError | string;
 
   // User-specific (tool results)
   toolUseResult?: any;
@@ -65,6 +69,17 @@ export interface RawEvent {
   // System-specific
   subtype?: string;
   durationMs?: number;
+  level?: string;
+
+  // `subtype: "api_error"` — a request that failed and was retried. The attempt
+  // that finally worked is written as an ordinary assistant message, so these
+  // events are the only record that the turn cost several tries.
+  /** 1-based; `maxRetries` is the budget, not how many actually happened. */
+  retryAttempt?: number;
+  maxRetries?: number;
+  retryInMs?: number;
+  /** `request_retry` / `connection_retry`. Absent on older transcripts. */
+  source?: string;
 
   // File history snapshot
   snapshot?: any;
@@ -73,6 +88,33 @@ export interface RawEvent {
 
   // Queue operation
   operation?: string;
+}
+
+/**
+ * The `error` of an `api_error` event. Two shapes share the field and neither
+ * is guaranteed whole, so every member is optional and the parser assembles a
+ * headline from whichever ones turned up:
+ *
+ *  - the harness's own record — `message` ("429 {…}", "Connection error."),
+ *    `formatted`, `status`, and `connection` when the socket never got through;
+ *  - the SDK's `APIError` — `status`, `headers`, `requestID`, and the response
+ *    body under `error`, which a proxy may have wrapped in another `error`.
+ */
+export interface ApiError {
+  /** Usually "<status> <json body>", sometimes a bare sentence. */
+  message?: string;
+  formatted?: string;
+  status?: number;
+  /** Set when the request never reached the API — `cause` on older events. */
+  connection?: { code?: string; message?: string; path?: string } | null;
+  cause?: { code?: string; message?: string; path?: string; errno?: number };
+  isNetworkDown?: boolean;
+  rateLimits?: any;
+  /** The response body, one or two `error` wrappers deep. */
+  error?: any;
+  type?: string | null;
+  requestID?: string | null;
+  headers?: Record<string, string>;
 }
 
 export interface AssistantMessage {

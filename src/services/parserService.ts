@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { RawEvent } from '../types/parser';
+import { ApiError, RawEvent } from '../types/parser';
 import {
   Attachment,
   HistoryEntry,
@@ -78,6 +78,15 @@ function extensionFor(mediaType: string): string {
   const subtype = mediaType.split('/')[1] ?? '';
   const cleaned = subtype.replace(/^x-/, '').replace(/[^a-z0-9]/gi, '');
   return cleaned || 'bin';
+}
+
+/** `JSON.parse` for text that is only maybe JSON: undefined instead of a throw. */
+function tryParseJson(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Decoded byte count of a base64 payload, without decoding it. */
@@ -536,6 +545,16 @@ export class ParserService {
         }
       }
 
+      // A request that failed and was retried. The attempt that worked is
+      // written as an ordinary assistant message, so without these the minute a
+      // turn spent on ten 429s reads as the model having been slow.
+      if (event.type === 'system' && event.subtype === 'api_error') {
+        const step = this.buildApiErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // Context compaction. Claude Code records it as a user event carrying
       // the hand-off summary that replaces the dropped history — there is no
       // assistant message for it, so give it a step of its own to keep the
@@ -831,6 +850,126 @@ export class ParserService {
       content: command && !text.includes(command) ? `$ ${command}\n\n${text}` : text,
       cost: 0,
     };
+  }
+
+  /**
+   * Step for a `system/api_error` event — a request that failed and was retried.
+   *
+   * One step per event, so a burst of retries reads as the burst it was: the
+   * rows sit between the same two steps the wait happened between, and their
+   * timestamps show how long the backoff actually took. Nothing is folded
+   * together — ten identical 429s are ten attempts, and collapsing them would
+   * hide the one number worth having.
+   */
+  private buildApiErrorStep(event: RawEvent, index: number): Step | null {
+    const error = event.error;
+    if (error === undefined || error === null) {
+      return null;
+    }
+
+    // The whole object follows the headline, so a shape we read wrongly still
+    // hands over everything the transcript had — request ids and proxy headers
+    // included, which is what a support ticket ends up needing.
+    const detail =
+      typeof error === 'object' ? `\n\n\`\`\`json\n${JSON.stringify(error, null, 2)}\n\`\`\`` : '';
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'api_error',
+      systemSource: this.apiErrorSource(event),
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: `${this.apiErrorHeadline(error) || 'API request failed'}${detail}`,
+      cost: 0,
+    };
+  }
+
+  /**
+   * What is shown ahead of the message on an API error row: what came back and
+   * which attempt this was — `429 · retry 1/10`. A request that never reached
+   * the API has no status, so the socket's code stands in for one.
+   */
+  private apiErrorSource(event: RawEvent): string | undefined {
+    const error = typeof event.error === 'object' && event.error ? event.error : {};
+    const code = error.connection?.code ?? error.cause?.code;
+    const what =
+      (typeof error.status === 'number' ? String(error.status) : '') ||
+      (typeof code === 'string' ? code : '') ||
+      'api error';
+    const attempt =
+      typeof event.retryAttempt === 'number'
+        ? `retry ${event.retryAttempt}${
+            typeof event.maxRetries === 'number' ? `/${event.maxRetries}` : ''
+          }`
+        : '';
+    return [what, attempt].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * The one line an API error is worth. `ApiError` documents the shapes; here
+   * they collapse to a sentence, with the status left out because
+   * `apiErrorSource` already carries it.
+   */
+  private apiErrorHeadline(error: ApiError | string): string {
+    if (typeof error === 'string') {
+      return error.trim();
+    }
+
+    const parts: string[] = [];
+    const message = typeof error.message === 'string' ? error.message.trim() : '';
+    // "429 {…}" — the JSON body after the status says what the status alone
+    // cannot ("daily cost limit exceeded: 30.09 >= 30.00").
+    const brace = message.indexOf('{');
+    const body = brace >= 0 ? tryParseJson(message.slice(brace)) : undefined;
+    if (body !== undefined) {
+      parts.push(this.describeErrorBody(body) || message);
+    } else if (message) {
+      parts.push(message);
+    } else {
+      parts.push(this.describeErrorBody(error.error));
+    }
+
+    // A transport failure has no body at all, only the socket that gave up —
+    // and where there is both, "Connection error." alone names neither.
+    const connection = error.connection ?? error.cause;
+    if (connection) {
+      const code = typeof connection.code === 'string' ? connection.code : '';
+      // The older events carry no sentence, only the URL that was being called.
+      const detail =
+        (typeof connection.message === 'string' ? connection.message.trim() : '') ||
+        (typeof connection.path === 'string' ? connection.path.trim() : '');
+      parts.push([code, detail].filter(Boolean).join(': '));
+    }
+
+    const headline = parts.filter(Boolean).join(' — ');
+    // Nothing recognised: the raw line the harness formatted beats an empty row.
+    return headline || (typeof error.formatted === 'string' ? error.formatted.trim() : '');
+  }
+
+  /**
+   * The sentence inside an error body. A proxy wraps the real body in another
+   * `error` — twice, for the LiteLLM gateway — and a quota refusal splits
+   * itself between a headline (`error`) and the numbers behind it
+   * (`stats.message`), so both are followed and joined.
+   */
+  private describeErrorBody(body: any, depth = 0): string {
+    if (typeof body === 'string') {
+      return body.trim();
+    }
+    if (!body || typeof body !== 'object' || depth > 3) {
+      return '';
+    }
+    const own =
+      this.describeErrorBody(body.error, depth + 1) ||
+      (typeof body.message === 'string' ? body.message.trim() : '');
+    const stats = body.stats;
+    const numbers =
+      stats && typeof stats === 'object' && typeof stats.message === 'string'
+        ? stats.message.trim()
+        : '';
+    return [own, numbers].filter(Boolean).join(' — ');
   }
 
   /**

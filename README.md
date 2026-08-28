@@ -208,9 +208,10 @@ user turns and stay attached to the tool call that produced them.
 ### System steps
 
 Some of what a transcript records is the harness acting, not the model: a hook
-that refused a tool call, and — as they get parsed — API errors, model
-fallbacks and the rest. They change how a session went and used to leave no
-trace in the timeline at all, so each one now becomes a `system` step.
+that refused a tool call, a request that had to be retried, and — as they get
+parsed — model fallbacks and the rest. They change how a session went and used
+to leave no trace in the timeline at all, so each one now becomes a `system`
+step.
 
 They are hidden by default. Every kind has its own button in the session
 header, to the right of the search toggle, showing how many of that kind the
@@ -223,6 +224,13 @@ Parsed so far:
 | kind | what it is |
 | --- | --- |
 | `hook error` | `attachment/hook_blocking_error` — a hook blocked a tool call and the model was handed the error instead of a result. The row shows which hook fired (`PostToolUse:Bash`) and the message; expanding it shows the whole thing, with the command that produced it. |
+| `api error` | `system/api_error` — a request failed and was retried. The row shows what came back and which attempt it was (`429 · retry 1/10`) plus the message the response carried, dug out of whichever shape the error arrived in; expanding it prints the error object as JSON, request ids and proxy headers included. One row per attempt, so a burst of retries reads as the burst it was — and, with them shown, the wait they caused is split off the step before them instead of counting as model time. |
+
+A kind that is on screen is also a line of its own in the Steps tab's type
+filter — "API errors (14)", "Hook errors (12)" — so a session can be narrowed to
+just those rows. The line is there exactly while the kind is, and switching a
+kind back off drops it from the filter rather than leaving a selection that
+matches nothing.
 
 Only the Steps tab ever shows them. Nothing was billed for a harness event and
 no rule reasons about one, so Cost, Context, Analysis, Flow, Map, Performance

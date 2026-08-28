@@ -5,9 +5,10 @@
  * A `system` step is not something the model did: nothing was billed for it and
  * no rule reasons about it, but it changed the run and the timeline had nothing
  * to show for it. So each kind stays hidden until the user presses its button
- * in the session header, and every kind gets its own button — hook errors and,
- * as they get parsed, API errors or model fallbacks are separate questions and
- * one switch for all of them would be no better than none.
+ * in the session header, and every kind gets its own button — a blocked tool
+ * call, a retried request and (as they get parsed) a model fallback are
+ * separate questions, and one switch for all of them would be no better than
+ * none: the kind you came for would arrive buried in the ones you did not.
  *
  * Adding a kind is an entry here plus a branch in the parser. Everything that
  * renders one — the header buttons, the step icon, the row's type column —
@@ -39,6 +40,24 @@ const BlockedIcon = ({ className, size = 13 }: IconProps) => (
   </svg>
 );
 
+/** Cloud struck through: the request to the API did not come back. */
+const ApiErrorIcon = ({ className, size = 13 }: IconProps) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M6.5 19a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 17.7 8.6 4.7 4.7 0 0 1 20 17.4" />
+    <path d="M3 3.5 21 20.5" />
+  </svg>
+);
+
 export interface SystemStepKindInfo {
   /** Matches `Step.systemKind` as the parser writes it. */
   kind: string;
@@ -58,6 +77,13 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     plural: 'hook errors',
     hint: 'a hook refused a tool call, and the model was handed the error instead of a result',
     Icon: BlockedIcon,
+  },
+  {
+    kind: 'api_error',
+    label: 'api error',
+    plural: 'API errors',
+    hint: 'a request failed and was retried — one row per attempt, so a burst reads as the burst it was',
+    Icon: ApiErrorIcon,
   },
 ];
 

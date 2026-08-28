@@ -48,3 +48,6 @@ yarn-error.log*
 *.temp
 .cache/
 .claude/*
+commits.md
+release.md
+specs/**

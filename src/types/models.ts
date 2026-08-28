@@ -110,8 +110,8 @@ export type StepType =
   // attachment reachable.
   | 'attachment'
   // Something the harness did rather than the model: a hook that blocked a
-  // call, and — as they get parsed — API errors, model fallbacks and the rest.
-  // See `SystemStepKind`.
+  // call, a request that had to be retried, and — as they get parsed — model
+  // fallbacks and the rest. See `SystemStepKind`.
   | 'system';
 
 /**
@@ -121,7 +121,7 @@ export type StepType =
  * means a branch in the parser and an entry in the webview's registry
  * (`webview/src/components/systemSteps.tsx`) — nothing else.
  */
-export type SystemStepKind = 'hook_blocking_error';
+export type SystemStepKind = 'hook_blocking_error' | 'api_error';
 
 /**
  * A binary blob a transcript carries inline — a pasted screenshot, an image a
