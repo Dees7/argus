@@ -122,6 +122,14 @@ function App() {
     [session]
   );
 
+  // The main session as it sits in the flattened timeline: the same steps as
+  // `mainSteps`, but carrying `globalIndex` and still accompanied by the
+  // harness events. The Performance tab measures gaps over these — a retry
+  // storm has to be able to end a pause it sits in, and a step it links to has
+  // to be numbered the way the Steps tab numbers it. Sub-agent steps stay out,
+  // so a Task keeps the duration of the whole agent it spawned.
+  const mainFlatSteps = useMemo(() => flatSteps.filter(step => !step.agentId), [flatSteps]);
+
   // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
   const stepsTabLabel =
     stepsFilteredCount !== null && stepsFilteredCount !== timelineSteps.length
@@ -441,7 +449,7 @@ function App() {
         )}
         {activeTab === 'performance' && (
           <PerformanceTab
-            steps={mainSteps}
+            steps={mainFlatSteps}
             onGoToStep={goToStep}
           />
         )}

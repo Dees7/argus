@@ -5,6 +5,7 @@ import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
 import { systemKindInfo } from './systemSteps';
+import { computeStepDurations } from '../utils/stepDurations';
 import { askUserQuestionSummary, parseAskUserQuestion } from './askUserQuestion';
 import './StepsTab.css';
 
@@ -673,19 +674,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
   // the next thing being drawn. Rows the tab's own search/filters remove never
   // affected this either; the map is keyed by step, and only the rows that
   // survive ever look themselves up.
+  // The gap to the next thing that happened is the whole answer here, pauses
+  // for the user included — this row describes the timeline, it does not rank
+  // operations, so `dropBeforeUserPrompt` stays off.
   const stepDurations = useMemo(() => {
-    const durations = new Map<number, number>();
-    const sorted = [...(allSteps ?? steps)].sort((a, b) => keyOf(a) - keyOf(b));
-    for (let i = 0; i < sorted.length; i++) {
-      if (!sorted[i].timestamp) continue;
-      const current = new Date(sorted[i].timestamp!).getTime();
-      if (i + 1 < sorted.length && sorted[i + 1].timestamp) {
-        const next = new Date(sorted[i + 1].timestamp!).getTime();
-        const diff = next - current;
-        if (diff >= 0) durations.set(keyOf(sorted[i]), diff);
-      }
-    }
-    return durations;
+    const timeline = allSteps ?? steps;
+    return computeStepDurations(timeline, timeline, { clampNegative: true });
   }, [allSteps, steps]);
 
   const formatTime = (timestamp?: string | Date) => {

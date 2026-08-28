@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Step } from '../types/session';
+import { Step, isSystemStep } from '../types/session';
+import { computeStepDurations } from '../utils/stepDurations';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -15,28 +16,35 @@ import './PerformanceTab.css';
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface Props {
+  /**
+   * The main session as it sits in the flattened timeline — harness events
+   * included. They are never measured or listed, but they end the gaps they
+   * sit in, so a tool call is not credited with the time the harness spent
+   * retrying after it.
+   */
   steps: Step[];
-  onGoToStep: (index: number) => void;
+  onGoToStep: (globalIndex: number) => void;
 }
 
 const PerformanceTab = ({ steps, onGoToStep }: Props) => {
   const performanceData = useMemo(() => {
-    // Calculate duration for each step
-    const stepsWithDuration = steps.map((step, idx) => {
-      const nextStep = steps[idx + 1];
-      let duration = 0;
-
-      if (step.timestamp && nextStep?.timestamp) {
-        const current = new Date(step.timestamp).getTime();
-        const next = new Date(nextStep.timestamp).getTime();
-        duration = next - current;
-      }
-
-      return {
-        ...step,
-        duration,
-      };
+    // What the model did. A harness event took time but is not an operation,
+    // so it stays out of the ranking and out of the breakdown — it only ever
+    // acts as a boundary, below.
+    const operations = steps.filter(step => !isSystemStep(step));
+    // A pause ending in the user typing is the human's time, not the model's,
+    // and left in it owns every top spot. Those steps come back with no
+    // duration at all rather than a wrong one.
+    const durations = computeStepDurations(operations, steps, {
+      clampNegative: true,
+      dropBeforeUserPrompt: true,
+      chronologicalBoundaries: true,
     });
+
+    const stepsWithDuration = operations.map(step => ({
+      ...step,
+      duration: durations.get(step.globalIndex ?? -1) ?? 0,
+    }));
 
     // Find slowest steps
     const sorted = [...stepsWithDuration]
@@ -58,6 +66,9 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
       slowest,
       durationByType,
       totalDuration,
+      // Steps the total is actually spread over. Dividing by every step instead
+      // would count the ones we deliberately left unmeasured as instant.
+      measuredCount: durations.size,
     };
   }, [steps]);
 
@@ -69,7 +80,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
 
   // Chart data for slowest operations
   const chartData = {
-    labels: performanceData.slowest.map(s => `#${s.index} ${s.toolName || s.type}`),
+    labels: performanceData.slowest.map(s => `#${s.globalIndex} ${s.toolName || s.type}`),
     datasets: [
       {
         label: 'Duration (ms)',
@@ -110,7 +121,7 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
       if (elements.length > 0) {
         const index = elements[0].index;
         const step = performanceData.slowest[index];
-        onGoToStep(step.index);
+        if (step.globalIndex !== undefined) onGoToStep(step.globalIndex);
       }
     },
   };
@@ -119,7 +130,9 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
     <div className="performance-tab">
       <div className="perf-summary">
         <div className="perf-card">
-          <div className="perf-label">Total Duration</div>
+          {/* Not the length of the session: the waits for the user are left
+              out, so this is the time the run was actually working. */}
+          <div className="perf-label">Active Duration</div>
           <div className="perf-value">{formatDuration(performanceData.totalDuration)}</div>
         </div>
         <div className="perf-card">
@@ -128,13 +141,15 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
             {performanceData.slowest[0] ? formatDuration(performanceData.slowest[0].duration) : '-'}
           </div>
           <div className="perf-sub">
-            {performanceData.slowest[0] && `#${performanceData.slowest[0].index}`}
+            {performanceData.slowest[0] && `#${performanceData.slowest[0].globalIndex}`}
           </div>
         </div>
         <div className="perf-card">
           <div className="perf-label">Avg Duration</div>
           <div className="perf-value">
-            {formatDuration(performanceData.totalDuration / steps.length)}
+            {performanceData.measuredCount > 0
+              ? formatDuration(performanceData.totalDuration / performanceData.measuredCount)
+              : '-'}
           </div>
         </div>
       </div>
@@ -174,12 +189,12 @@ const PerformanceTab = ({ steps, onGoToStep }: Props) => {
         <div className="slowest-steps-list">
           {performanceData.slowest.map(step => (
             <div
-              key={step.index}
+              key={step.globalIndex}
               className="slowest-step-item"
-              onClick={() => onGoToStep(step.index)}
+              onClick={() => step.globalIndex !== undefined && onGoToStep(step.globalIndex)}
             >
               <div className="slowest-step-header">
-                <span className="slowest-step-index">#{step.index}</span>
+                <span className="slowest-step-index">#{step.globalIndex}</span>
                 <span className="slowest-step-type">{step.toolName || step.type}</span>
                 <span className="slowest-step-duration">{formatDuration(step.duration)}</span>
               </div>
