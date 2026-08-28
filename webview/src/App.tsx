@@ -203,6 +203,15 @@ function App() {
     window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed });
   };
 
+  // A tab filtered itself and needs the bar back — a query nobody can see is a
+  // list that has silently lost rows. Treated as the user having opened it, so
+  // it stays open the same way the toggle would.
+  const revealSearch = () => {
+    if (!searchCollapsed) return;
+    setSearchCollapsed(false);
+    window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed: false });
+  };
+
   // Nothing is sent to the host here: these live and die with the panel.
   const toggleSystemKind = (kind: string) => {
     setVisibleSystemKinds(prev => {
@@ -406,6 +415,7 @@ function App() {
             autoExpand={stepsAutoExpand}
             hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
+            onRevealControls={revealSearch}
           />
         )}
         {activeTab === 'analysis' && (

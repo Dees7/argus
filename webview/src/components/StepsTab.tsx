@@ -33,6 +33,10 @@ interface Props {
   // How many steps survive the current search/filters, reported up so the tab
   // header can show "Steps (13/55)". null while the tab is unmounted.
   onFilteredCountChange?: (count: number | null) => void;
+  // Unfold the search/filter bar. A cost link puts a message id in the search
+  // box, and a query the user cannot see or clear is worse than no filter at
+  // all — so the bar comes back on its own when that happens.
+  onRevealControls?: () => void;
 }
 
 /* ── SVG icons ── */
@@ -353,7 +357,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -523,6 +527,53 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     return map;
   }, [findings, steps]);
 
+  // Where each API response was charged, keyed by message id.
+  //
+  // The transcript writes one event per content block and the parser bills a
+  // response once, on the first step it produced, so every other block of that
+  // response carries `cost: 0`. "The price is on the row above" is not a rule
+  // that holds: harness events interleave with a response's blocks (on a local
+  // corpus of ~13.7k responses, ~0.8% end up split apart), and any sort other
+  // than chronological moves the charged row somewhere else entirely.
+  //
+  // Built over the whole timeline rather than the filtered list, so the charged
+  // row stays findable when the view has been narrowed to a single block.
+  const billing = useMemo(() => {
+    const m = new Map<string, { key: number; cost: number; estimate: boolean; blocks: number }>();
+    for (const s of allSteps ?? steps) {
+      if (!s.messageId) continue;
+      const entry = m.get(s.messageId);
+      if (!entry) {
+        m.set(s.messageId, {
+          key: keyOf(s),
+          cost: s.cost,
+          estimate: !!s.costIsEstimate,
+          blocks: 1,
+        });
+        continue;
+      }
+      entry.blocks++;
+      // A response has exactly one charged step; the first one seen with a
+      // cost wins, so an untaxed block never claims the entry.
+      if (entry.cost === 0 && s.cost > 0) {
+        entry.key = keyOf(s);
+        entry.cost = s.cost;
+        entry.estimate = !!s.costIsEstimate;
+      }
+    }
+    return m;
+  }, [allSteps, steps]);
+
+  // Narrow the timeline to one API response. The message id goes into the
+  // search box rather than into a filter of its own: it is visible, it is
+  // cleared the same way every other query is, and nothing new has to be
+  // remembered to undo it.
+  const showResponse = useCallback((messageId: string) => {
+    setSearchQuery(messageId);
+    setOpenDropdown(null);
+    onRevealControls?.();
+  }, [onRevealControls]);
+
   // Dynamic tool/type counts
   const toolCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -616,12 +667,15 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
   const filteredSteps = useMemo(() => {
     let result = [...steps];
 
-    // Text search
+    // Text search. The message id is searchable too, which is what turns
+    // "msg_011CeTce1p" into "the blocks of one API response" — the cost links
+    // put exactly that in the box.
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(s =>
         (s.toolName?.toLowerCase().includes(q)) ||
         (s.content?.toLowerCase().includes(q)) ||
+        (s.messageId?.toLowerCase().includes(q)) ||
         (s.toolInput && JSON.stringify(s.toolInput).toLowerCase().includes(q)) ||
         (s.toolResult?.toLowerCase().includes(q))
       );
@@ -895,6 +949,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
               step.type === 'user' ||
               step.type === 'system') && !!step.content;
           const systemInfo = systemKindInfo(step.systemKind);
+          // Where this step's response was billed, and how many steps that one
+          // charge covers. A step of type `user`/`compact`/`system` has no
+          // response behind it and gets nothing.
+          const billed = step.messageId ? billing.get(step.messageId) : undefined;
+          const chargedElsewhere = !!billed && billed.cost > 0 && billed.key !== k;
+          const sharedBlocks = billed?.blocks ?? 0;
           const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
           const hasIssues = stepFindings.has(k);
           const isHighlighted = highlightStep === k;
@@ -1005,22 +1065,54 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                       {formatDuration(stepDurations.get(k)!)}
                     </span>
                   )}
-                  {/* Only the step a response is charged to carries a cost;
-                      its siblings and user/compact steps carry 0, and a literal
-                      $0.0000 there reads as "this was free" rather than
-                      "billed elsewhere". */}
-                  {step.cost > 0 && (
-                    <span
-                      className="step-cost"
-                      title={
-                        step.costIsEstimate
-                          ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
-                          : undefined
-                      }
+                  {/* Only the step a response is charged to carries a cost.
+                      Its siblings carry 0 — a literal $0.0000 there would read
+                      as "this was free" rather than "billed elsewhere", so they
+                      show where the money actually landed instead, and clicking
+                      either side narrows the timeline to that one response. */}
+                  {step.cost > 0 ? (
+                    sharedBlocks > 1 ? (
+                      <button
+                        className="step-cost step-cost-shared"
+                        title={
+                          `Charged once for all ${sharedBlocks} blocks of response ${step.messageId} — click to show them` +
+                          (step.costIsEstimate
+                            ? `\nEstimated — no exact price for model ${step.model ?? 'unknown'}`
+                            : '')
+                        }
+                        onClick={e => {
+                          e.stopPropagation();
+                          showResponse(step.messageId!);
+                        }}
+                      >
+                        {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
+                        <span className="step-cost-blocks">×{sharedBlocks}</span>
+                      </button>
+                    ) : (
+                      <span
+                        className="step-cost"
+                        title={
+                          step.costIsEstimate
+                            ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
+                            : undefined
+                        }
+                      >
+                        {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
+                      </span>
+                    )
+                  ) : chargedElsewhere ? (
+                    <button
+                      className="step-cost-ref"
+                      title={`This block is part of response ${step.messageId}, charged as a whole on step #${billed!.key} (${billed!.estimate ? '≈' : ''}$${billed!.cost.toFixed(4)} for ${billed!.blocks} blocks) — click to show only that response`}
+                      onClick={e => {
+                        e.stopPropagation();
+                        showResponse(step.messageId!);
+                      }}
                     >
-                      {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
-                    </span>
-                  )}
+                      <span>{billed!.estimate ? '≈' : ''}${billed!.cost.toFixed(4)}</span>
+                      <span className="step-cost-ref-target">↗ #{billed!.key}</span>
+                    </button>
+                  ) : null}
                   <span className="step-expand">▶</span>
                 </div>
               </button>

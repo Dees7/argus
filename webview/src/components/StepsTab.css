@@ -453,6 +453,55 @@
   white-space: nowrap;
 }
 
+/* A charge that covers more than one block of the same response. Reads as the
+   price it already was, with the block count and a hint that it can be opened. */
+.step-cost-shared {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--border);
+}
+
+.step-cost-shared:hover {
+  color: var(--text);
+}
+
+.step-cost-blocks {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* The other blocks of that response: what it cost and which step holds it. */
+.step-cost-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.step-cost-ref:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+/* Not struck through: the money was spent, just not booked on this row —
+   the arrow says where it went. */
+.step-cost-ref-target {
+  font-size: 11px;
+}
+
 .step-expand {
   font-size: 10px;
   color: var(--text-dim);
