@@ -42,19 +42,30 @@ interface Props {
 /* ── SVG icons ── */
 const SearchIcon = () => (
   <svg className="steps-search-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
+  </svg>
+);
+
+/* Stacked plates for the cost links: one API response, several blocks. Three
+   horizontal slabs rather than an arrow or a funnel — both of those are
+   triangles at this size and blur into the row's own ▶ expander. */
+const CostGroupIcon = () => (
+  <svg className="step-cost-group-icon" width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <path d="M5 1h10l-4 3.2H1z" />
+    <path d="M5 6.4h10l-4 3.2H1z" />
+    <path d="M5 11.8h10l-4 3.2H1z" />
   </svg>
 );
 
 const ChevronIcon = () => (
   <svg className="steps-dropdown-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M7.976 10.072l4.357-4.357.619.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/>
+    <path d="M7.976 10.072l4.357-4.357.619.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z" />
   </svg>
 );
 
 const CheckIcon = () => (
   <svg className="steps-dropdown-check" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
   </svg>
 );
 
@@ -104,94 +115,94 @@ const StepIcon = ({ step }: { step: Step }) => {
     case 'Read':
       return (
         <svg className="step-icon step-icon-read" {...stepIconProps} stroke="currentColor">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8"/><path d="M16 17H8"/><path d="M16 13h-2"/>
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 13H8" /><path d="M16 17H8" /><path d="M16 13h-2" />
         </svg>
       );
     case 'Write':
       return (
         <svg className="step-icon step-icon-write" {...stepIconProps} stroke="currentColor">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M12 18v-6" /><path d="m9 15 3-3 3 3" />
         </svg>
       );
     case 'Edit':
       return (
         <svg className="step-icon step-icon-edit" {...stepIconProps} stroke="currentColor">
-          <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>
+          <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
         </svg>
       );
     case 'Bash':
       return (
         <svg className="step-icon step-icon-bash" {...stepIconProps} stroke="currentColor">
-          <polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>
+          <polyline points="4 17 10 11 4 5" /><line x1="12" x2="20" y1="19" y2="19" />
         </svg>
       );
     case 'Grep':
       return (
         <svg className="step-icon step-icon-grep" {...stepIconProps} stroke="currentColor">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/>
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /><path d="M8 11h6" />
         </svg>
       );
     case 'Glob':
       return (
         <svg className="step-icon step-icon-glob" {...stepIconProps} stroke="currentColor">
-          <circle cx="17" cy="17" r="3"/><path d="m21 21-1.9-1.9"/><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/>
+          <circle cx="17" cy="17" r="3" /><path d="m21 21-1.9-1.9" /><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1" />
         </svg>
       );
     case 'Agent':
       return (
         <svg className="step-icon step-icon-agent" {...stepIconProps} stroke="currentColor">
-          <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+          <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
         </svg>
       );
     case 'AskUserQuestion':
       // A speech bubble with a tick: the harness asked, the user answered.
       return (
         <svg className="step-icon step-icon-ask" {...stepIconProps} stroke="currentColor">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/><path d="m9 11.5 2 2 4-4"/>
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" /><path d="m9 11.5 2 2 4-4" />
         </svg>
       );
     case 'thinking':
       return (
         <svg className="step-icon step-icon-thinking" {...stepIconProps} stroke="currentColor">
-          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/>
+          <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" /><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" /><path d="M17.599 6.5a3 3 0 0 0 .399-1.375" /><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" /><path d="M3.477 10.896a4 4 0 0 1 .585-.396" /><path d="M19.938 10.5a4 4 0 0 1 .585.396" /><path d="M6 18a4 4 0 0 1-1.967-.516" /><path d="M19.967 17.484A4 4 0 0 1 18 18" />
         </svg>
       );
     case 'text':
       return (
         <svg className="step-icon step-icon-text" {...stepIconProps} stroke="currentColor">
-          <path d="M7 10h10"/><path d="M7 14h4"/><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          <path d="M7 10h10" /><path d="M7 14h4" /><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       );
     case 'error':
       return (
         <svg className="step-icon step-icon-error" {...stepIconProps} stroke="currentColor">
-          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /><path d="M12 9v4" /><path d="M12 17h.01" />
         </svg>
       );
     case 'user':
       return (
         <svg className="step-icon step-icon-user" {...stepIconProps} stroke="currentColor">
-          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
         </svg>
       );
     case 'attachment':
       // Paperclip: a step that exists only to carry what the message brought.
       return (
         <svg className="step-icon step-icon-attachment" {...stepIconProps} stroke="currentColor">
-          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
         </svg>
       );
     case 'compact':
       // Arrows folding inward — the history collapsing into a summary.
       return (
         <svg className="step-icon step-icon-compact" {...stepIconProps} stroke="currentColor">
-          <path d="M4 9h6V3"/><path d="M20 9h-6V3"/><path d="M4 15h6v6"/><path d="M20 15h-6v6"/>
+          <path d="M4 9h6V3" /><path d="M20 9h-6V3" /><path d="M4 15h6v6" /><path d="M20 15h-6v6" />
         </svg>
       );
     default:
       return (
         <svg className="step-icon step-icon-default" {...stepIconProps} stroke="currentColor">
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
         </svg>
       );
   }
@@ -200,19 +211,19 @@ const StepIcon = ({ step }: { step: Step }) => {
 // Dropdown trigger icons
 const FilterIcon = () => (
   <svg className="steps-dropdown-trigger-icon" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M6 12v-1h4v1H6zM4 8v-1h8v1H4zM2 4v-1h12v1H2z"/>
+    <path d="M6 12v-1h4v1H6zM4 8v-1h8v1H4zM2 4v-1h12v1H2z" />
   </svg>
 );
 
 const StatusIcon = () => (
   <svg className="steps-dropdown-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><path d="m9 11 3 3L22 4" />
   </svg>
 );
 
 const SortIcon = () => (
   <svg className="steps-dropdown-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/>
+    <path d="m3 16 4 4 4-4" /><path d="M7 20V4" /><path d="m21 8-4-4-4 4" /><path d="M17 4v16" />
   </svg>
 );
 
@@ -232,11 +243,11 @@ const StepTokenUsage = ({ usage }: { usage: TokenUsage }) => {
     ['out', usage.output_tokens, 'Output tokens', false],
     ...(thinking > 0
       ? ([['think', thinking, 'Reasoning tokens — part of the output count, not billed on top of it', true]] as [
-          string,
-          number,
-          string,
-          boolean,
-        ][])
+        string,
+        number,
+        string,
+        boolean,
+      ][])
       : []),
     ['cache r', usage.cache_read_input_tokens, 'Cache read tokens', false],
     ['cache w', usage.cache_creation_input_tokens, 'Cache creation tokens', false],
@@ -925,7 +936,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                 <div className="steps-divider" />
                 <button className="steps-clear-filters" onClick={clearAllFilters} title="Clear all filters">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
                   </svg>
                   <span>Clear</span>
                 </button>
@@ -937,258 +948,262 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
 
       <div className="steps-scroll">
         <div className={`steps-list${sortMode === 'newest' ? ' tree-reversed' : ''}`}>
-        {filteredSteps.map((step, i) => {
-          const k = keyOf(step);
-          const summary = getStepSummary(step);
-          const isExpanded = isStepExpanded(step);
-          const hasToolBody = !!(step.toolInput || step.toolResult);
-          const hasContentBody =
-            (step.type === 'text' ||
-              step.type === 'thinking' ||
-              step.type === 'compact' ||
-              step.type === 'user' ||
-              step.type === 'system') && !!step.content;
-          const systemInfo = systemKindInfo(step.systemKind);
-          // Where this step's response was billed, and how many steps that one
-          // charge covers. A step of type `user`/`compact`/`system` has no
-          // response behind it and gets nothing.
-          const billed = step.messageId ? billing.get(step.messageId) : undefined;
-          const chargedElsewhere = !!billed && billed.cost > 0 && billed.key !== k;
-          const sharedBlocks = billed?.blocks ?? 0;
-          const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
-          const hasIssues = stepFindings.has(k);
-          const isHighlighted = highlightStep === k;
-          const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
-          // A Task row may itself sit inside an agent transcript, so look the
-          // spawned agents up by (owning agent, local step index).
-          const linkedAgents =
-            step.toolName === 'Task' || step.toolName === 'Agent'
-              ? agentsByParent.get(spawnKey(step.agentId, step.index))
-              : undefined;
-          const allCollapsed = linkedAgents
-            ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
-            : false;
-          // Tree-style connector positioning: the connector is owned by the
-          // agent rows themselves — line begins at the first agent step's
-          // top edge and terminates at the last with an "└" corner.
-          const prev = i > 0 ? filteredSteps[i - 1] : undefined;
-          const next = i + 1 < filteredSteps.length ? filteredSteps[i + 1] : undefined;
-          const isAgent = !!step.agentId;
-          const isFirstAgentInRun =
-            isAgent && (!prev || prev.agentId !== step.agentId);
-          const isLastAgentInRun =
-            isAgent && (!next || next.agentId !== step.agentId);
-          // Nesting level drives the indent and connector offsets in CSS:
-          // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
-          const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
+          {filteredSteps.map((step, i) => {
+            const k = keyOf(step);
+            const summary = getStepSummary(step);
+            const isExpanded = isStepExpanded(step);
+            const hasToolBody = !!(step.toolInput || step.toolResult);
+            const hasContentBody =
+              (step.type === 'text' ||
+                step.type === 'thinking' ||
+                step.type === 'compact' ||
+                step.type === 'user' ||
+                step.type === 'system') && !!step.content;
+            const systemInfo = systemKindInfo(step.systemKind);
+            // Where this step's response was billed, and how many steps that one
+            // charge covers. A step of type `user`/`compact`/`system` has no
+            // response behind it and gets nothing.
+            const billed = step.messageId ? billing.get(step.messageId) : undefined;
+            const chargedElsewhere = !!billed && billed.cost > 0 && billed.key !== k;
+            const sharedBlocks = billed?.blocks ?? 0;
+            const usageNode = step.usage ? <StepTokenUsage usage={step.usage} /> : null;
+            const hasIssues = stepFindings.has(k);
+            const isHighlighted = highlightStep === k;
+            const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
+            // A Task row may itself sit inside an agent transcript, so look the
+            // spawned agents up by (owning agent, local step index).
+            const linkedAgents =
+              step.toolName === 'Task' || step.toolName === 'Agent'
+                ? agentsByParent.get(spawnKey(step.agentId, step.index))
+                : undefined;
+            const allCollapsed = linkedAgents
+              ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
+              : false;
+            // Tree-style connector positioning: the connector is owned by the
+            // agent rows themselves — line begins at the first agent step's
+            // top edge and terminates at the last with an "└" corner.
+            const prev = i > 0 ? filteredSteps[i - 1] : undefined;
+            const next = i + 1 < filteredSteps.length ? filteredSteps[i + 1] : undefined;
+            const isAgent = !!step.agentId;
+            const isFirstAgentInRun =
+              isAgent && (!prev || prev.agentId !== step.agentId);
+            const isLastAgentInRun =
+              isAgent && (!next || next.agentId !== step.agentId);
+            // Nesting level drives the indent and connector offsets in CSS:
+            // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
+            const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
 
-          return (
-            <div
-              key={k}
-              style={{ '--depth': String(depth) } as React.CSSProperties}
-              className={[
-                'step-item',
-                isExpanded ? 'expanded' : '',
-                isHighlighted ? 'highlight' : '',
-                hasIssues ? 'has-issues' : '',
-                step.toolSuccess === false ? 'step-item-error' : '',
-                step.type === 'compact' ? 'step-item-compact' : '',
-                step.type === 'user' ? 'step-item-user' : '',
-                step.type === 'system' ? 'step-item-system' : '',
-                isAgent ? 'step-item-agent' : '',
-                linkedAgents && !allCollapsed ? 'step-item-task' : '',
-                isFirstAgentInRun ? 'step-agent-first' : '',
-                isLastAgentInRun ? 'step-agent-last' : '',
-              ].filter(Boolean).join(' ')}
-            >
-              <button className="step-header" onClick={() => toggleStep(k)}>
-                {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
-                <div className="step-left">
-                  <StepIcon step={step} />
-                  <span className="step-index">#{k}</span>
-                  <span className="step-time">{formatTime(step.timestamp)}</span>
-                  <span className="step-type">
-                    {step.toolName || systemInfo?.label || step.type}
-                  </span>
-                  {ownerAgent && (
-                    <>
-                      <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                        {ownerAgent.agentType || 'agent'}
-                      </span>
-                      {/* Transcript of this agent lives in
+            return (
+              <div
+                key={k}
+                style={{ '--depth': String(depth) } as React.CSSProperties}
+                className={[
+                  'step-item',
+                  isExpanded ? 'expanded' : '',
+                  isHighlighted ? 'highlight' : '',
+                  hasIssues ? 'has-issues' : '',
+                  step.toolSuccess === false ? 'step-item-error' : '',
+                  step.type === 'compact' ? 'step-item-compact' : '',
+                  step.type === 'user' ? 'step-item-user' : '',
+                  step.type === 'system' ? 'step-item-system' : '',
+                  isAgent ? 'step-item-agent' : '',
+                  linkedAgents && !allCollapsed ? 'step-item-task' : '',
+                  isFirstAgentInRun ? 'step-agent-first' : '',
+                  isLastAgentInRun ? 'step-agent-last' : '',
+                ].filter(Boolean).join(' ')}
+              >
+                <button className="step-header" onClick={() => toggleStep(k)}>
+                  {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
+                  <div className="step-left">
+                    <StepIcon step={step} />
+                    <span className="step-index">#{k}</span>
+                    <span className="step-time">{formatTime(step.timestamp)}</span>
+                    <span className="step-type">
+                      {step.toolName || systemInfo?.label || step.type}
+                    </span>
+                    {ownerAgent && (
+                      <>
+                        <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
+                          {ownerAgent.agentType || 'agent'}
+                        </span>
+                        {/* Transcript of this agent lives in
                           <session>/subagents/agent-<agentId>.jsonl — show the id
                           so a row can be traced back to its own session file. */}
-                      <span
-                        className="step-agent-id"
-                        title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
-                      >
-                        {ownerAgent.agentId}
-                      </span>
-                    </>
-                  )}
-                  {linkedAgents && linkedAgents.length > 0 && (
-                    <>
-                      {/* The spawning Task row carries the id(s) of the agent
-                          session(s) it started, mirroring the agent rows below. */}
-                      {linkedAgents.map(a => (
                         <span
-                          key={a.agentId}
                           className="step-agent-id"
-                          title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                          title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
                         >
-                          {a.agentId}
+                          {ownerAgent.agentId}
                         </span>
-                      ))}
-                      <button
-                        className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          for (const a of linkedAgents) toggleAgent(a.agentId);
-                        }}
-                        title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
-                      >
-                        {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
-                      </button>
-                    </>
-                  )}
-                  {/* Success/error state is carried by the row colouring alone
+                      </>
+                    )}
+                    {linkedAgents && linkedAgents.length > 0 && (
+                      <>
+                        {/* The spawning Task row carries the id(s) of the agent
+                          session(s) it started, mirroring the agent rows below. */}
+                        {linkedAgents.map(a => (
+                          <span
+                            key={a.agentId}
+                            className="step-agent-id"
+                            title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                          >
+                            {a.agentId}
+                          </span>
+                        ))}
+                        <button
+                          className={`step-task-toggle${allCollapsed ? ' collapsed' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            for (const a of linkedAgents) toggleAgent(a.agentId);
+                          }}
+                          title={allCollapsed ? 'Show agent steps' : 'Hide agent steps'}
+                        >
+                          {allCollapsed ? '▸' : '▾'} {linkedAgents.reduce((acc, a) => acc + a.stepCount, 0)} agent steps
+                        </button>
+                      </>
+                    )}
+                    {/* Success/error state is carried by the row colouring alone
                       (.step-item-error) — no extra tick or badge here. */}
-                  {summary && summary.text && (
-                    <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
-                      {summary.text}
-                    </span>
-                  )}
-                </div>
-                <div className="step-right">
-                  {stepDurations.has(k) && (
-                    <span className={`step-duration${(stepDurations.get(k)!) >= 5000 ? ' slow' : ''}`}>
-                      {formatDuration(stepDurations.get(k)!)}
-                    </span>
-                  )}
-                  {/* Only the step a response is charged to carries a cost.
+                    {summary && summary.text && (
+                      <span className={`step-summary${summary.mono ? ' mono' : ''}`}>
+                        {summary.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="step-right">
+                    {stepDurations.has(k) && (
+                      <span className={`step-duration${(stepDurations.get(k)!) >= 5000 ? ' slow' : ''}`}>
+                        {formatDuration(stepDurations.get(k)!)}
+                      </span>
+                    )}
+                    {/* Only the step a response is charged to carries a cost.
                       Its siblings carry 0 — a literal $0.0000 there would read
                       as "this was free" rather than "billed elsewhere", so they
                       show where the money actually landed instead, and clicking
                       either side narrows the timeline to that one response. */}
-                  {step.cost > 0 ? (
-                    sharedBlocks > 1 ? (
+                    {step.cost > 0 ? (
+                      sharedBlocks > 1 ? (
+                        <button
+                          className="step-cost-ref step-cost-charged"
+                          title={
+                            `Charged once for all ${sharedBlocks} blocks of response ${step.messageId} — click to show them` +
+                            (step.costIsEstimate
+                              ? `\nEstimated — no exact price for model ${step.model ?? 'unknown'}`
+                              : '')
+                          }
+                          onClick={e => {
+                            e.stopPropagation();
+                            showResponse(step.messageId!);
+                          }}
+                        >
+                          <span>{step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}</span>
+                          <span className="step-cost-ref-target">
+                            <CostGroupIcon /> ×{sharedBlocks}
+                          </span>
+                        </button>
+                      ) : (
+                        <span
+                          className="step-cost"
+                          title={
+                            step.costIsEstimate
+                              ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
+                              : undefined
+                          }
+                        >
+                          {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
+                        </span>
+                      )
+                    ) : chargedElsewhere ? (
                       <button
-                        className="step-cost step-cost-shared"
-                        title={
-                          `Charged once for all ${sharedBlocks} blocks of response ${step.messageId} — click to show them` +
-                          (step.costIsEstimate
-                            ? `\nEstimated — no exact price for model ${step.model ?? 'unknown'}`
-                            : '')
-                        }
+                        className="step-cost-ref"
+                        title={`This block is part of response ${step.messageId}, charged as a whole on step #${billed!.key} (${billed!.estimate ? '≈' : ''}$${billed!.cost.toFixed(4)} for ${billed!.blocks} blocks) — click to show only that response`}
                         onClick={e => {
                           e.stopPropagation();
                           showResponse(step.messageId!);
                         }}
                       >
-                        {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
-                        <span className="step-cost-blocks">×{sharedBlocks}</span>
+                        <span>{billed!.estimate ? '≈' : ''}${billed!.cost.toFixed(4)}</span>
+                        <span className="step-cost-ref-target">
+                          <CostGroupIcon /> #{billed!.key}
+                        </span>
                       </button>
-                    ) : (
-                      <span
-                        className="step-cost"
-                        title={
-                          step.costIsEstimate
-                            ? `Estimated — no exact price for model ${step.model ?? 'unknown'}`
-                            : undefined
-                        }
-                      >
-                        {step.costIsEstimate ? '≈' : ''}${step.cost.toFixed(4)}
-                      </span>
-                    )
-                  ) : chargedElsewhere ? (
-                    <button
-                      className="step-cost-ref"
-                      title={`This block is part of response ${step.messageId}, charged as a whole on step #${billed!.key} (${billed!.estimate ? '≈' : ''}$${billed!.cost.toFixed(4)} for ${billed!.blocks} blocks) — click to show only that response`}
-                      onClick={e => {
-                        e.stopPropagation();
-                        showResponse(step.messageId!);
-                      }}
-                    >
-                      <span>{billed!.estimate ? '≈' : ''}${billed!.cost.toFixed(4)}</span>
-                      <span className="step-cost-ref-target">↗ #{billed!.key}</span>
-                    </button>
-                  ) : null}
-                  <span className="step-expand">▶</span>
-                </div>
-              </button>
+                    ) : null}
+                    <span className="step-expand">▶</span>
+                  </div>
+                </button>
 
-              {isExpanded && (
-                <div className="step-details">
-                  {hasIssues && (
-                    <div className="step-findings">
-                      {stepFindings.get(k)!.map((f, i) => (
-                        <div key={i} className={`finding-inline ${f.severity}`}>
-                          <strong>{f.title}</strong>
-                          <p>{f.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {(step.toolInput || step.toolResult) && (
-                    <div className="detail-section">
-                      <RendererErrorBoundary
-                        fallback={(err) => (
-                          <div className="renderer-fallback">
-                            <div className="renderer-fallback-header">
-                              Renderer crashed — showing raw data. ({err.message})
-                            </div>
-                            {step.toolInput !== undefined && (
-                              <pre className="detail-code">{JSON.stringify(step.toolInput, null, 2)}</pre>
-                            )}
-                            {step.toolResult !== undefined && (
-                              <pre className="detail-code">{step.toolResult}</pre>
-                            )}
+                {isExpanded && (
+                  <div className="step-details">
+                    {hasIssues && (
+                      <div className="step-findings">
+                        {stepFindings.get(k)!.map((f, i) => (
+                          <div key={i} className={`finding-inline ${f.severity}`}>
+                            <strong>{f.title}</strong>
+                            <p>{f.description}</p>
                           </div>
-                        )}
-                      >
-                        <ToolRenderer step={step} meta={usageNode} />
-                      </RendererErrorBoundary>
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
 
-                  {hasContentBody && (
-                    <div className="detail-section">
-                      <RendererErrorBoundary
-                        fallback={(err) => (
-                          <div className="renderer-fallback">
-                            <div className="renderer-fallback-header">
-                              Renderer crashed — showing raw text. ({err.message})
+                    {(step.toolInput || step.toolResult) && (
+                      <div className="detail-section">
+                        <RendererErrorBoundary
+                          fallback={(err) => (
+                            <div className="renderer-fallback">
+                              <div className="renderer-fallback-header">
+                                Renderer crashed — showing raw data. ({err.message})
+                              </div>
+                              {step.toolInput !== undefined && (
+                                <pre className="detail-code">{JSON.stringify(step.toolInput, null, 2)}</pre>
+                              )}
+                              {step.toolResult !== undefined && (
+                                <pre className="detail-code">{step.toolResult}</pre>
+                              )}
                             </div>
-                            <pre className="detail-text">{step.content}</pre>
-                          </div>
-                        )}
-                      >
-                        <ContentRenderer step={step} meta={usageNode} />
-                      </RendererErrorBoundary>
-                    </div>
-                  )}
+                          )}
+                        >
+                          <ToolRenderer step={step} meta={usageNode} />
+                        </RendererErrorBoundary>
+                      </div>
+                    )}
 
-                  {/* Steps with neither renderer (a tool call with no payload,
+                    {hasContentBody && (
+                      <div className="detail-section">
+                        <RendererErrorBoundary
+                          fallback={(err) => (
+                            <div className="renderer-fallback">
+                              <div className="renderer-fallback-header">
+                                Renderer crashed — showing raw text. ({err.message})
+                              </div>
+                              <pre className="detail-text">{step.content}</pre>
+                            </div>
+                          )}
+                        >
+                          <ContentRenderer step={step} meta={usageNode} />
+                        </RendererErrorBoundary>
+                      </div>
+                    )}
+
+                    {/* Steps with neither renderer (a tool call with no payload,
                       an empty text block) still have somewhere to show their
                       token counts. */}
-                  {usageNode && !hasToolBody && !hasContentBody && (
-                    <div className="step-usage-standalone">{usageNode}</div>
-                  )}
+                    {usageNode && !hasToolBody && !hasContentBody && (
+                      <div className="step-usage-standalone">{usageNode}</div>
+                    )}
 
-                  {/* Blobs the message carried — a pasted screenshot, a file
+                    {/* Blobs the message carried — a pasted screenshot, a file
                       from an event the timeline otherwise skips. Tool steps
                       are not here: their attachments belong to the tool
                       renderer, which shows them in the pretty view and the raw
                       base64 in the other two. */}
-                  {!hasToolBody && step.attachments && step.attachments.length > 0 && (
-                    <Attachments attachments={step.attachments} agentId={step.agentId} />
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                    {!hasToolBody && step.attachments && step.attachments.length > 0 && (
+                      <Attachments attachments={step.attachments} agentId={step.agentId} />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
       </div>

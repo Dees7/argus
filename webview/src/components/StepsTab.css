@@ -453,29 +453,9 @@
   white-space: nowrap;
 }
 
-/* A charge that covers more than one block of the same response. Reads as the
-   price it already was, with the block count and a hint that it can be opened. */
-.step-cost-shared {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  border-bottom: 1px dotted var(--border);
-}
-
-.step-cost-shared:hover {
-  color: var(--text);
-}
-
-.step-cost-blocks {
-  font-size: 10px;
-  opacity: 0.7;
-}
-
-/* The other blocks of that response: what it cost and which step holds it. */
+/* Both sides of one response: the row that holds the charge (with the number
+   of blocks it covers) and the rows that point back at it. Same shape on
+   purpose — they are two views of the same link, and either opens the group. */
 .step-cost-ref {
   display: inline-flex;
   align-items: center;
@@ -496,10 +476,30 @@
   color: var(--text);
 }
 
-/* Not struck through: the money was spent, just not booked on this row —
-   the arrow says where it went. */
+/* The row the charge is actually booked on: reads at the same weight as a
+   plain price, only its "↗ ×N" tail is quieter. Fading it like the pointing
+   rows would hide the one number in the group that is real. */
+.step-cost-charged {
+  opacity: 1;
+}
+
+.step-cost-charged .step-cost-ref-target {
+  opacity: 0.6;
+}
+
+/* Nothing is struck through on the pointing rows: the money was spent, it is
+   just not booked there — the stacked plates say "one response, several
+   blocks", and the number says which step holds the charge. */
 .step-cost-ref-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   font-size: 11px;
+}
+
+.step-cost-group-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .step-expand {
