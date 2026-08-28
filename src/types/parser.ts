@@ -71,6 +71,29 @@ export interface RawEvent {
   durationMs?: number;
   level?: string;
 
+  // `subtype: "local_command"` — a slash command the CLI ran by itself. Two
+  // events per command share the subtype and the field: the invocation, as a
+  // `<command-name>/<command-message>/<command-args>` document, and its output
+  // wrapped in `<local-command-stdout>`, whose `parentUuid` is the invocation.
+  // Nothing was sent to the model either time, so this is the only record.
+  content?: string;
+
+  // `subtype: "stop_hook_summary"` — what the Stop hooks did when the turn
+  // ended. Written after every turn whether or not anything went wrong, so most
+  // are uneventful; the ones worth finding are those with a `hookErrors` entry
+  // or with `preventedContinuation`, where a hook sent the model back to work.
+  /** How many hooks ran; `hookInfos` has one entry each. */
+  hookCount?: number;
+  hookInfos?: { command?: string; durationMs?: number }[];
+  /** One sentence per hook that failed. Non-blocking unless `preventedContinuation`. */
+  hookErrors?: string[];
+  /** Text a hook fed back into the conversation. Empty in every transcript we have. */
+  hookAdditionalContext?: string[];
+  /** A hook refused to let the turn end — `stopReason` is what it said. */
+  preventedContinuation?: boolean;
+  stopReason?: string;
+  hasOutput?: boolean;
+
   // `subtype: "api_error"` — a request that failed and was retried. The attempt
   // that finally worked is written as an ordinary assistant message, so these
   // events are the only record that the turn cost several tries.

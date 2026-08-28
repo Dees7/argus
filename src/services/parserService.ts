@@ -38,6 +38,7 @@ const INJECTED_BLOCK_RE = new RegExp(
 // buries the one interesting part, so it collapses back to what was typed.
 const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
+const COMMAND_STDOUT_RE = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/;
 
 /**
  * How far into a transcript the metadata scan keeps looking for the pieces it
@@ -455,6 +456,9 @@ export class ParserService {
     // blocks that produce no step while still having been billed. Those get a
     // placeholder step rather than dropping the charge off the timeline.
     const blankMessages = this.findBlankMessages(events);
+    // Which slash command each `local_command` invocation was, keyed by its
+    // uuid, so the output event that follows can name the command it came from.
+    const localCommands = new Map<string, string>();
 
     for (const event of events) {
       // Session-level model, for display only. Costs use each message's own
@@ -550,6 +554,25 @@ export class ParserService {
       // turn spent on ten 429s reads as the model having been slow.
       if (event.type === 'system' && event.subtype === 'api_error') {
         const step = this.buildApiErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // A slash command the CLI answered by itself — /resume, /model, /mcp. It
+      // never reaches the model, so the timeline otherwise shows the session
+      // pausing for no reason, and for the commands that print something the
+      // output is the only explanation of what the person just read.
+      if (event.type === 'system' && event.subtype === 'local_command') {
+        const step = this.buildLocalCommandStep(event, steps.length, localCommands);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // What the Stop hooks did when a turn ended.
+      if (event.type === 'system' && event.subtype === 'stop_hook_summary') {
+        const step = this.buildStopHookStep(event, steps.length);
         if (step) {
           steps.push(step);
         }
@@ -884,6 +907,124 @@ export class ParserService {
       content: `${this.apiErrorHeadline(error) || 'API request failed'}${detail}`,
       cost: 0,
     };
+  }
+
+  /**
+   * Step for a `system/local_command` event — a slash command the CLI ran
+   * without asking the model.
+   *
+   * One command is two events sharing the subtype: the invocation, then its
+   * output. They stay two rows, because they are two things that happened and
+   * a long `/status` dump under the row that asked for it is exactly what a
+   * user would then have to fold away again. The invocation records its name in
+   * `commands` so the output can be labelled `/status · output` instead of
+   * standing there anonymous — the two events are only linked by `parentUuid`.
+   */
+  private buildLocalCommandStep(
+    event: RawEvent,
+    index: number,
+    commands: Map<string, string>
+  ): Step | null {
+    const raw = typeof event.content === 'string' ? event.content : '';
+    if (raw.trim() === '') {
+      return null;
+    }
+
+    const step = (source: string | undefined, content: string): Step => ({
+      index,
+      type: 'system',
+      systemKind: 'local_command',
+      systemSource: source,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content,
+      cost: 0,
+    });
+
+    const name = raw.match(COMMAND_NAME_RE)?.[1].trim() ?? '';
+    if (name) {
+      commands.set(event.uuid, name);
+      // `<command-message>` is the name without its slash in every transcript
+      // we have, so it is dropped rather than printed beside it.
+      const args = raw.match(COMMAND_ARGS_RE)?.[1].trim() ?? '';
+      return step(name, args);
+    }
+
+    const stdout = raw.match(COMMAND_STDOUT_RE)?.[1] ?? '';
+    // Neither shape: kept whole rather than guessed at, so a format we have not
+    // seen still reaches the timeline.
+    const text = (stdout || raw).trim();
+    if (text === '') {
+      return null;
+    }
+    const from = event.parentUuid ? commands.get(event.parentUuid) : undefined;
+    return step(from ? `${from} · output` : 'output', text);
+  }
+
+  /**
+   * Step for a `system/stop_hook_summary` event — the Stop hooks that ran when
+   * a turn ended.
+   *
+   * Written after every turn, so most of these say nothing but "one hook ran,
+   * it took 7ms". They are still one row each: the count in the header button
+   * is how often the hooks fired, and the rows worth finding — a hook that
+   * errored, or one that refused to let the turn end — are found by reading
+   * down the same list rather than by trusting this parser's idea of dull.
+   */
+  private buildStopHookStep(event: RawEvent, index: number): Step | null {
+    const hooks = Array.isArray(event.hookInfos) ? event.hookInfos : [];
+    const errors = (Array.isArray(event.hookErrors) ? event.hookErrors : [])
+      .map(error => (typeof error === 'string' ? error.trim() : ''))
+      .filter(Boolean);
+    const added = (Array.isArray(event.hookAdditionalContext) ? event.hookAdditionalContext : [])
+      .map(text => (typeof text === 'string' ? text.trim() : ''))
+      .filter(Boolean);
+    const count = typeof event.hookCount === 'number' ? event.hookCount : hooks.length;
+    if (count === 0 && errors.length === 0) {
+      return null;
+    }
+
+    const stopReason = typeof event.stopReason === 'string' ? event.stopReason.trim() : '';
+    const blocked = event.preventedContinuation === true;
+
+    const lines: string[] = hooks.map(hook => {
+      const command = typeof hook?.command === 'string' ? hook.command.trim() : '(unnamed hook)';
+      const ms = typeof hook?.durationMs === 'number' ? ` (${hook.durationMs}ms)` : '';
+      return `$ ${command}${ms}`;
+    });
+    if (blocked) {
+      // The one outcome that changed the run: the turn did not end here.
+      lines.push('', `continuation blocked${stopReason ? `: ${stopReason}` : ''}`);
+    }
+    for (const error of errors) {
+      lines.push('', error);
+    }
+    for (const text of added) {
+      lines.push('', text);
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'stop_hook_summary',
+      systemSource: this.stopHookSource(count, errors.length, blocked),
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: lines.join('\n').trim(),
+      cost: 0,
+    };
+  }
+
+  /**
+   * What is shown ahead of a stop-hook row: how many hooks ran and whether
+   * anything came of it — `2 hooks · 1 error`, `1 hook · blocked`.
+   */
+  private stopHookSource(count: number, errors: number, blocked: boolean): string {
+    const ran = `${count} hook${count === 1 ? '' : 's'}`;
+    const failed = errors > 0 ? `${errors} error${errors === 1 ? '' : 's'}` : '';
+    return [ran, blocked ? 'blocked' : '', failed].filter(Boolean).join(' · ');
   }
 
   /**

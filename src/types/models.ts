@@ -121,7 +121,11 @@ export type StepType =
  * means a branch in the parser and an entry in the webview's registry
  * (`webview/src/components/systemSteps.tsx`) — nothing else.
  */
-export type SystemStepKind = 'hook_blocking_error' | 'api_error';
+export type SystemStepKind =
+  | 'hook_blocking_error'
+  | 'api_error'
+  | 'local_command'
+  | 'stop_hook_summary';
 
 /**
  * A binary blob a transcript carries inline — a pasted screenshot, an image a

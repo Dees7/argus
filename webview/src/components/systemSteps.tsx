@@ -6,9 +6,10 @@
  * no rule reasons about it, but it changed the run and the timeline had nothing
  * to show for it. So each kind stays hidden until the user presses its button
  * in the session header, and every kind gets its own button — a blocked tool
- * call, a retried request and (as they get parsed) a model fallback are
- * separate questions, and one switch for all of them would be no better than
- * none: the kind you came for would arrive buried in the ones you did not.
+ * call, a retried request, a slash command and the stop hooks are separate
+ * questions, and one switch for all of them would be no better than none: the
+ * kind you came for would arrive buried in the ones you did not. The stop hooks
+ * alone outnumber every other row in a long session.
  *
  * Adding a kind is an entry here plus a branch in the parser. Everything that
  * renders one — the header buttons, the step icon, the row's type column —
@@ -58,6 +59,42 @@ const ApiErrorIcon = ({ className, size = 13 }: IconProps) => (
   </svg>
 );
 
+/** A slash in a window: a command the CLI ran and answered by itself. */
+const LocalCommandIcon = ({ className, size = 13 }: IconProps) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M14 8.5 10 15.5" />
+  </svg>
+);
+
+/** A crook: the hook the harness hung on the end of the turn. */
+const StopHookIcon = ({ className, size = 13 }: IconProps) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M15 4v10a5 5 0 0 1-10 0v-2" />
+    <path d="M11.5 6.5 15 3l3.5 3.5" />
+  </svg>
+);
+
 export interface SystemStepKindInfo {
   /** Matches `Step.systemKind` as the parser writes it. */
   kind: string;
@@ -84,6 +121,20 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     plural: 'API errors',
     hint: 'a request failed and was retried — one row per attempt, so a burst reads as the burst it was',
     Icon: ApiErrorIcon,
+  },
+  {
+    kind: 'local_command',
+    label: 'command',
+    plural: 'local commands',
+    hint: 'a slash command the CLI answered by itself — the model never saw it; the invocation and its output are separate rows',
+    Icon: LocalCommandIcon,
+  },
+  {
+    kind: 'stop_hook_summary',
+    label: 'stop hooks',
+    plural: 'stop hooks',
+    hint: 'what the Stop hooks did when a turn ended — one row per turn, so most say only that they ran; the ones that matter are the errors and the refusals to stop',
+    Icon: StopHookIcon,
   },
 ];
 
