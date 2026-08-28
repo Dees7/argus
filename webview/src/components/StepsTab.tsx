@@ -6,6 +6,7 @@ import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
 import { systemKindInfo } from './systemSteps';
 import { computeStepDurations } from '../utils/stepDurations';
+import { stripAnsi } from '../utils/ansi';
 import { askUserQuestionSummary, parseAskUserQuestion } from './askUserQuestion';
 import './StepsTab.css';
 
@@ -771,14 +772,20 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     // A harness event: which hook (or whatever else names the source) fired,
     // then the first line of what it said.
     if (step.type === 'system') {
-      const first = (step.content || '').split('\n').find(line => line.trim() !== '')?.trim();
+      // A slash command's output can be terminal text: its colour codes are
+      // invisible here but still push the line around, so they come off. Text
+      // without them is returned unchanged.
+      const first = stripAnsi(step.content || '')
+        .split('\n')
+        .find(line => line.trim() !== '')
+        ?.trim();
       const text = [step.systemSource, first].filter(Boolean).join(' — ');
       return text ? { text, mono: true } : null;
     }
     // First non-empty line of the prompt/reply, so a turn is recognisable
     // while collapsed.
     if (step.type === 'user' || step.type === 'text' || step.type === 'attachment') {
-      const first = (step.content || '')
+      const first = stripAnsi(step.content || '')
         .split('\n')
         .find(line => line.trim() !== '');
       if (first) return { text: first.trim(), mono: false };

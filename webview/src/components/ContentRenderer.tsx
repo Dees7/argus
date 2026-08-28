@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Marked } from 'marked';
 import hljs from 'highlight.js';
 import { Step } from '../types/session';
+import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import './ContentRenderer.css';
 
 // ─── Markdown engine with code-block highlighting ───────────────────────
@@ -57,14 +58,24 @@ const ContentRenderer = ({ step, meta }: Props) => {
   const kind = step.type;
   const label = KIND_LABEL[kind];
 
+  // Terminal output — a slash command's stdout, above all — is not Markdown:
+  // its meaning is in the columns and the colours, both of which Markdown
+  // reflows away. So when the text carries colour codes the pretty view shows
+  // the terminal instead. The test is the ESC byte (see `utils/ansi`), which
+  // prose never contains, so nothing that used to render as Markdown stops.
+  const terminal = useMemo(
+    () => (content && hasAnsi(content) ? ansiToHtml(content) : ''),
+    [content]
+  );
+
   const html = useMemo(() => {
-    if (!content) return '';
+    if (!content || terminal) return '';
     try {
       return marked.parse(content) as string;
     } catch {
       return `<pre>${escapeHtml(content)}</pre>`;
     }
-  }, [content]);
+  }, [content, terminal]);
 
   if (!content) return null;
 
@@ -73,6 +84,12 @@ const ContentRenderer = ({ step, meta }: Props) => {
       <div className="cr-toolbar">
         <div className="cr-toolbar-left">
           {label && <span className="cr-kind">{label}</span>}
+          {/* Says why Pretty is a terminal here and not the usual Markdown. */}
+          {terminal && (
+            <span className="cr-ansi-badge" title="Terminal output — ANSI colours rendered">
+              ANSI
+            </span>
+          )}
           {meta}
         </div>
         <div className="cr-toggle">
@@ -100,7 +117,9 @@ const ContentRenderer = ({ step, meta }: Props) => {
           </button>
         </div>
       </div>
-      {view === 'pretty' ? (
+      {view === 'pretty' && terminal ? (
+        <pre className="cr-ansi" dangerouslySetInnerHTML={{ __html: terminal }} />
+      ) : view === 'pretty' ? (
         <div className="cr-pretty" dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
         <pre className={`cr-raw${view === 'wrap' ? ' cr-raw-wrap' : ''}`}>{content}</pre>

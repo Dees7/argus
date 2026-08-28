@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import hljs from 'highlight.js';
 import { diffLines } from 'diff';
 import { Attachment, Step } from '../types/session';
+import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { parseAskUserQuestion } from './askUserQuestion';
 import 'highlight.js/styles/github-dark.css';
@@ -301,6 +302,18 @@ const MultiEditRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
+/**
+ * A command's output as the terminal drew it. Anything a tool ran with colours
+ * on — `ls --color`, a test runner, a build — keeps them here; text without
+ * colour codes renders exactly as it did before, as a plain child node.
+ */
+const TerminalText = ({ text }: { text: string }) =>
+  hasAnsi(text) ? (
+    <code dangerouslySetInnerHTML={{ __html: ansiToHtml(text) }} />
+  ) : (
+    <code>{text}</code>
+  );
+
 const BashRenderer = ({ input, result }: { input: any; result: any }) => {
   const cmd: string = input?.command || '';
   let stdout = '';
@@ -340,12 +353,12 @@ const BashRenderer = ({ input, result }: { input: any; result: any }) => {
       </div>
       {stdout && (
         <pre className="tr-bash-stdout">
-          <code>{stdout}</code>
+          <TerminalText text={stdout} />
         </pre>
       )}
       {stderr && (
         <pre className="tr-bash-stderr">
-          <code>{stderr}</code>
+          <TerminalText text={stderr} />
         </pre>
       )}
     </div>

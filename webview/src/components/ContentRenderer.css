@@ -244,6 +244,35 @@
   font-style: normal;
 }
 
+/* Terminal view — what Pretty shows when the text arrived with ANSI colour
+   codes in it. Columns only line up in a monospace font that keeps its
+   spacing, so the block scrolls sideways rather than wrapping: a folded
+   progress bar or usage chart is no longer the picture it was drawn as. */
+.cr-ansi {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg-dark, #1a1a1a);
+  font-family: var(--font-code), monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+  max-height: none;
+  tab-size: 8;
+}
+
+.cr-ansi-badge {
+  font-family: var(--font-code), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Raw view — straight monospace dump, no truncation. Lines keep their
    original length and scroll sideways; the Wrap variant folds them to the
    panel width instead. */
