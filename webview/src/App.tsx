@@ -390,6 +390,7 @@ function App() {
         {activeTab === 'steps' && (
           <StepsTab
             steps={timelineSteps}
+            allSteps={flatSteps}
             subagents={session.subagents}
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}

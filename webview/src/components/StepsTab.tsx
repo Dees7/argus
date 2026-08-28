@@ -9,6 +9,12 @@ import './StepsTab.css';
 
 interface Props {
   steps: Step[];
+  // Every step the transcript produced, including the harness events the header
+  // buttons are currently hiding. Only durations read this: a gap is a fact
+  // about the session, not about what is on screen, so it must not grow when a
+  // button folds the step that filled it away. Optional — callers without it
+  // fall back to measuring what they render.
+  allSteps?: Step[];
   subagents: Subagent[];
   findings: Finding[];
   highlightStep: number | null;
@@ -338,7 +344,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // hand us un-flattened arrays.
 const keyOf = (step: Step): number => step.globalIndex ?? step.index;
 
-const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -651,10 +657,17 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
 
   useEffect(() => () => onFilteredCountChange?.(null), [onFilteredCountChange]);
 
-  // Calculate duration for each step (time to next step)
+  // How long each step took: the gap to whatever happened next.
+  //
+  // Measured over every step, hidden ones included, so a row reports the same
+  // number whether or not the harness events around it are on screen — and the
+  // one it reports is the gap to the next thing that actually happened, not to
+  // the next thing being drawn. Rows the tab's own search/filters remove never
+  // affected this either; the map is keyed by step, and only the rows that
+  // survive ever look themselves up.
   const stepDurations = useMemo(() => {
     const durations = new Map<number, number>();
-    const sorted = [...steps].sort((a, b) => keyOf(a) - keyOf(b));
+    const sorted = [...(allSteps ?? steps)].sort((a, b) => keyOf(a) - keyOf(b));
     for (let i = 0; i < sorted.length; i++) {
       if (!sorted[i].timestamp) continue;
       const current = new Date(sorted[i].timestamp!).getTime();
@@ -665,7 +678,7 @@ const StepsTab = ({ steps, subagents, findings, highlightStep, defaultSortMode =
       }
     }
     return durations;
-  }, [steps]);
+  }, [allSteps, steps]);
 
   const formatTime = (timestamp?: string | Date) => {
     if (!timestamp) return '';
