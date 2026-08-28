@@ -306,6 +306,7 @@
 .step-icon-compact { color: #C8956A; }
 .step-icon-user    { color: #7EA6D9; }
 .step-icon-attachment { color: #9BB0C4; }
+.step-icon-ask     { color: #D9B36C; }
 .step-icon-system  { color: var(--status-error); }
 .step-icon-default { color: var(--text-dim); }
 

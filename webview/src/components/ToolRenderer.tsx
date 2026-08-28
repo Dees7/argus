@@ -3,6 +3,7 @@ import hljs from 'highlight.js';
 import { diffLines } from 'diff';
 import { Attachment, Step } from '../types/session';
 import Attachments, { useAttachmentBytes } from './Attachments';
+import { parseAskUserQuestion } from './askUserQuestion';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
 
@@ -517,6 +518,77 @@ const WebSearchRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
+const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any }) => {
+  const call = useMemo(() => parseAskUserQuestion(input, result), [input, result]);
+
+  if (call.questions.length === 0) {
+    return <div className="tr-empty">No questions recorded for this ask.</div>;
+  }
+
+  return (
+    <div className="tr-block">
+      {call.questions.map((q, i) => {
+        const answer = call.answers[i];
+        const picked = new Set(answer.picked);
+        // A single-select shows what was taken and what was passed over; a
+        // multi-select is a checklist, so unticked options are part of the
+        // answer too. Same glyph pair either way, filled vs. empty.
+        const [on, off] = q.multiSelect ? ['☑', '☐'] : ['●', '○'];
+        return (
+          <div className="tr-ask-question" key={i}>
+            <div className="tr-ask-head">
+              {q.header && <span className="tr-ask-header">{q.header}</span>}
+              {q.multiSelect && <span className="tr-badge tr-badge-info">multi</span>}
+              {!answer.answered && <span className="tr-badge tr-badge-warn">unanswered</span>}
+              <span className="tr-ask-text">{q.question}</span>
+            </div>
+            <ul className="tr-ask-options">
+              {q.options.map((o, j) => {
+                const chosen = picked.has(o.label);
+                return (
+                  <li key={j} className={`tr-ask-option${chosen ? ' tr-ask-option-chosen' : ''}`}>
+                    <span className="tr-ask-mark" aria-hidden>{chosen ? on : off}</span>
+                    <div className="tr-ask-option-body">
+                      <div className="tr-ask-label">{o.label}</div>
+                      {o.description && <div className="tr-ask-desc">{o.description}</div>}
+                      {/* Previews are mockups several lines tall. The chosen
+                          one is the reason the answer reads the way it does, so
+                          it opens; the rest stay one line until asked for. */}
+                      {o.preview && (
+                        <details className="tr-ask-preview" open={chosen}>
+                          <summary>preview</summary>
+                          <pre>{o.preview}</pre>
+                        </details>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+              {/* What the user typed under "Other" — never one of the offered
+                  options, and on a multi-select it can sit alongside them. */}
+              {answer.custom && (
+                <li className="tr-ask-option tr-ask-option-chosen tr-ask-option-custom">
+                  <span className="tr-ask-mark" aria-hidden>✎</span>
+                  <div className="tr-ask-option-body">
+                    <div className="tr-ask-label">Own answer</div>
+                    <pre className="tr-ask-custom">{answer.custom}</pre>
+                  </div>
+                </li>
+              )}
+            </ul>
+            {answer.note && (
+              <div className="tr-ask-note">
+                <span className="tr-ask-note-label">note</span>
+                <pre className="tr-ask-custom">{answer.note}</pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 /**
  * The base64 payload of a result's attachments. The parser leaves a `[image]`
  * marker in the result text — that is the parsed view — so the raw view has to
@@ -612,6 +684,7 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   TodoWrite: TodoWriteRenderer,
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,
+  AskUserQuestion: AskUserQuestionRenderer,
 };
 
 // pretty = per-tool renderer, raw = JSON dump with horizontal scroll,

@@ -655,6 +655,146 @@
   color: var(--status-success);
 }
 
+/* ─── AskUserQuestion ────────────────────────────────────────────── */
+.tr-ask-question + .tr-ask-question {
+  border-top: 1px solid var(--border);
+}
+
+.tr-ask-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.tr-ask-header {
+  font-family: var(--font-code), monospace;
+  font-size: 11px;
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+
+.tr-ask-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-bright);
+  flex: 1 1 100%;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.tr-ask-options {
+  margin: 0;
+  padding: 8px 12px 10px;
+  list-style: none;
+}
+
+.tr-ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+  color: var(--text-dim);
+}
+
+.tr-ask-mark {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-family: var(--font-code), monospace;
+  font-weight: 700;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.tr-ask-option-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tr-ask-label {
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.tr-ask-desc {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  opacity: 0.85;
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+/* The pick, and only the pick, gets full contrast: scanning the block should
+   answer "what did the user choose" before it answers "what was on offer". */
+.tr-ask-option-chosen {
+  color: var(--text-bright);
+}
+
+.tr-ask-option-chosen .tr-ask-mark {
+  color: var(--status-success);
+}
+
+.tr-ask-option-chosen .tr-ask-label {
+  font-weight: 600;
+}
+
+.tr-ask-option-custom .tr-ask-mark {
+  color: var(--status-info);
+}
+
+.tr-ask-preview {
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+
+.tr-ask-preview > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-family: var(--font-code), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.tr-ask-preview > pre,
+.tr-ask-custom {
+  margin: 4px 0 0;
+  padding: 7px 9px;
+  background: var(--bg-dark, #1a1a1a);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 4px;
+  font-family: var(--font-code), monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  overflow-x: auto;
+}
+
+.tr-ask-note {
+  padding: 0 12px 10px 38px;
+}
+
+.tr-ask-note-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
 /* ─── Raw view ───────────────────────────────────────────────────── */
 .tr-raw {
   display: flex;
