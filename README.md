@@ -213,25 +213,39 @@ parsed — model fallbacks and the rest. They change how a session went and used
 to leave no trace in the timeline at all, so each one now becomes a `system`
 step.
 
-They are hidden by default. Each has its button in the session header, to the
-right of the search toggle, showing how many steps it would bring in; pressing
-it drops those steps into the timeline in place, and
-the button lights up while they are there. The state is per panel and is not
-remembered — closing the session puts the timeline back to what the model did.
+They are hidden by default. The buttons in the session header, to the right of
+the search toggle, each show how many steps they would bring in; pressing one
+drops those steps into the timeline in place, and the button lights up while
+they are there. One button per question rather than per kind — everything the
+hooks did is one button, however many kinds of event it took to record it. The
+state is per panel and is not remembered — closing the session puts the timeline
+back to what the model did.
+
+A row is red only when the event was something going wrong — a blocked call, a
+hook that fell over, a retried request, a stop hook that errored or refused to
+let the turn end. Hooks that ran and finished, and slash commands the CLI
+answered, are the harness working: they get the same dashed frame in neutral
+grey, so red in a timeline still means a row worth reading.
 
 Parsed so far:
 
 | kind | what it is |
 | --- | --- |
 | `hook error` | `attachment/hook_blocking_error` — a hook blocked a tool call and the model was handed the error instead of a result. The row shows which hook fired (`PostToolUse:Bash`) and the message; expanding it shows the whole thing, with the command that produced it. |
-| `hook failed` | `attachment/hook_non_blocking_error` — a hook exited non-zero and nothing stopped: the tool call went ahead, the turn ended, and this event is the only trace that the notification never fired or the formatter never ran. The row shows the hook, the command, whatever it printed and how it ended (`exit 126 · 9ms`). Shares the `hook error` button, because "did a hook get in the way?" is one question; the two stay separate rows in the type filter. |
+| `hook failed` | `attachment/hook_non_blocking_error` — a hook exited non-zero and nothing stopped: the tool call went ahead, the turn ended, and this event is the only trace that the notification never fired or the formatter never ran. The row shows the hook, the command, whatever it printed and how it ended (`exit 126 · 9ms`). |
+| `stop hooks` | `system/stop_hook_summary` — what the Stop hooks did when a turn ended. One row per turn, so most say only that they ran and how long they took; the ones worth finding are the hook that errored and the hook that refused to let the turn end, and those are the red ones. |
 | `api error` | `system/api_error` — a request failed and was retried. The row shows what came back and which attempt it was (`429 · retry 1/10`) plus the message the response carried, dug out of whichever shape the error arrived in; expanding it prints the error object as JSON, request ids and proxy headers included. One row per attempt, so a burst of retries reads as the burst it was — and, with them shown, the wait they caused is split off the step before them instead of counting as model time. |
+| `command` | `system/local_command` — a slash command the CLI answered by itself, which the model never saw. The invocation and its output are separate rows, the second labelled after the first (`/status · output`). |
 
-A kind that is on screen is also a line of its own in the Steps tab's type
-filter — "API errors (14)", "Hook errors (12)" — so a session can be narrowed to
-just those rows. The line is there exactly while the kind is, and switching a
-kind back off drops it from the filter rather than leaving a selection that
-matches nothing.
+The first three share one button, `hook steps`: what the hooks did is one
+question, and the stop hooks outnumber the failures by roughly ten to one but
+arrive grey against their red, so the rare row still stands out.
+
+A kind that is on screen is still a line of its own in the Steps tab's type
+filter — "API errors (14)", "Hook errors (12)", "Stop hooks (41)" — so a session
+can be narrowed to just those rows, one kind at a time, whatever brought them in.
+The line is there exactly while the kind is, and switching a kind back off drops
+it from the filter rather than leaving a selection that matches nothing.
 
 Only the Steps tab ever shows them. Nothing was billed for a harness event and
 no rule reasons about one, so Cost, Context, Analysis, Flow, Map, Performance

@@ -169,6 +169,15 @@ export interface Step {
   /** Set on `system` steps only — which harness event this one stands for. */
   systemKind?: SystemStepKind;
   /**
+   * Set on `system` steps only — whether this one records something going
+   * wrong. A hook running is not an event: the timeline paints an `error` red
+   * and leaves a `notice` in the neutral grey it deserves, so a red row in a
+   * session means a red row worth reading. Not a property of the kind — the
+   * stop hooks are a `notice` on most turns and an `error` on the turn one of
+   * them fell over.
+   */
+  systemSeverity?: 'error' | 'notice';
+  /**
    * Where a `system` step came from, shown ahead of its text in the row: the
    * hook's name for a blocked call (`PostToolUse:Bash`), and whatever names the
    * source for the kinds added later.

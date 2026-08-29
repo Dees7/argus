@@ -308,6 +308,7 @@
 .step-icon-attachment { color: #9BB0C4; }
 .step-icon-ask     { color: #D9B36C; }
 .step-icon-system  { color: var(--status-error); }
+.step-icon-system-notice { color: var(--text-dim); }
 .step-icon-default { color: var(--text-dim); }
 
 .step-index {
@@ -425,6 +426,24 @@
 .step-item-system .step-type {
   color: var(--status-error);
   opacity: 0.85;
+}
+
+/* The same event without the failure: hooks that ran and finished, a slash
+   command the CLI answered. It still gets the dashed frame — nothing here was
+   billed either — but not the colour, so red in a timeline keeps meaning that
+   something went wrong rather than that a hook exists. */
+.step-item-system-notice {
+  background: color-mix(in srgb, var(--text-dim) 5%, transparent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--text-dim) 45%, transparent);
+}
+
+.step-item-system-notice:hover {
+  background: color-mix(in srgb, var(--text-dim) 9%, transparent);
+}
+
+.step-item-system-notice .step-type {
+  color: var(--text-dim);
+  opacity: 1;
 }
 
 .step-right {

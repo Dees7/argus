@@ -878,6 +878,7 @@ export class ParserService {
       index,
       type: 'system',
       systemKind: 'hook_blocking_error',
+      systemSeverity: 'error',
       systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
       timestamp: new Date(event.timestamp),
       uuid: event.uuid,
@@ -930,6 +931,7 @@ export class ParserService {
       index,
       type: 'system',
       systemKind: 'hook_non_blocking_error',
+      systemSeverity: 'error',
       systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
       timestamp: new Date(event.timestamp),
       uuid: event.uuid,
@@ -965,6 +967,7 @@ export class ParserService {
       index,
       type: 'system',
       systemKind: 'api_error',
+      systemSeverity: 'error',
       systemSource: this.apiErrorSource(event),
       timestamp: new Date(event.timestamp),
       uuid: event.uuid,
@@ -999,6 +1002,8 @@ export class ParserService {
       index,
       type: 'system',
       systemKind: 'local_command',
+      // The CLI answering a slash command is the CLI working.
+      systemSeverity: 'notice',
       systemSource: source,
       timestamp: new Date(event.timestamp),
       uuid: event.uuid,
@@ -1073,6 +1078,9 @@ export class ParserService {
       index,
       type: 'system',
       systemKind: 'stop_hook_summary',
+      // Hooks having run is not a failure; a hook that fell over, or one that
+      // sent the model back to work, is.
+      systemSeverity: errors.length > 0 || blocked ? 'error' : 'notice',
       systemSource: this.stopHookSource(count, errors.length, blocked),
       timestamp: new Date(event.timestamp),
       uuid: event.uuid,

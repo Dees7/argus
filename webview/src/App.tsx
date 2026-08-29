@@ -309,6 +309,9 @@ function App() {
                 button rather than carrying one of their own. */}
             <span className="view-toggle-divider" />
             {SYSTEM_STEP_TOGGLES.map(info => {
+              // A button that covers several kinds is worded for the group, not
+              // for whichever kind happens to own it.
+              const button = info.button ?? info;
               const count = systemStepCounts.get(info.kind) ?? 0;
               const shown = visibleSystemToggles.has(info.kind);
               const action = shown ? 'Hide' : 'Show';
@@ -320,13 +323,13 @@ function App() {
                   disabled={count === 0}
                   title={
                     count === 0
-                      ? `No ${info.plural} in this session`
-                      : `${action} ${info.plural} (${count}) — ${info.hint}`
+                      ? `No ${button.plural} in this session`
+                      : `${action} ${button.plural} (${count}) — ${button.hint}`
                   }
-                  aria-label={`${action} ${info.plural}`}
+                  aria-label={`${action} ${button.plural}`}
                   aria-pressed={shown}
                 >
-                  <info.Icon size={12} />
+                  <button.Icon size={12} />
                   <span className="view-toggle-count">{count}</span>
                 </button>
               );

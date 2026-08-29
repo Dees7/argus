@@ -4,13 +4,13 @@
  *
  * A `system` step is not something the model did: nothing was billed for it and
  * no rule reasons about it, but it changed the run and the timeline had nothing
- * to show for it. So each kind stays hidden until the user presses its button
- * in the session header, and a button covers one question rather than all of
- * them — a blocked tool call, a retried request, a slash command and the stop
- * hooks are separate things to go looking for, and one switch for the lot would
- * be no better than none: the kind you came for would arrive buried in the ones
- * you did not. The stop hooks alone outnumber every other row in a long session.
- * Kinds that answer the same question share a button via `toggleWith`.
+ * to show for it. So each kind stays hidden until the user presses a button in
+ * the session header, and a button covers one question rather than all of them —
+ * the hooks, the retried requests and the slash commands are separate things to
+ * go looking for, and one switch for the lot would be no better than none: the
+ * rows you came for would arrive buried in the ones you did not. A question can
+ * span kinds, though: the hooks answer theirs in three (`toggleWith` points the
+ * other two at the button that owns it, and `button` names the group).
  *
  * Adding a kind is an entry here plus a branch in the parser. Everything that
  * renders one — the header buttons, the step icon, the row's type column —
@@ -97,8 +97,8 @@ const LocalCommandIcon = ({ className, size = 13 }: IconProps) => (
   </svg>
 );
 
-/** A crook: the hook the harness hung on the end of the turn. */
-const StopHookIcon = ({ className, size = 13 }: IconProps) => (
+/** A crook: a hook, whether the harness hung it on a tool or on the turn. */
+const HookIcon = ({ className, size = 13 }: IconProps) => (
   <svg
     className={className}
     width={size}
@@ -120,19 +120,25 @@ export interface SystemStepKindInfo {
   kind: string;
   /** The row's type column, where a tool step shows its tool name. */
   label: string;
-  /** Plural for the header button: "Show hook errors (12)". */
+  /** Plural for the Steps tab's type filter: "Hook errors (12)". */
   plural: string;
   /** What the kind means, appended to the button's tooltip. */
   hint: string;
   Icon: (props: IconProps) => ReactElement;
   /**
    * The kind whose button brings this one in, for a kind that gets no button of
-   * its own. Two kinds that answer the same question — "did a hook get in the
-   * way?" — are one thing to switch on and two things to read, so they share a
-   * button and keep their own label and icon in the row. Omitted by every kind
+   * its own. Kinds that answer the same question — "what did the hooks do?" —
+   * are one thing to switch on and several things to read, so they share a
+   * button and keep their own label, icon and filter row. Omitted by every kind
    * that stands on its own, which is the normal case.
    */
   toggleWith?: string;
+  /**
+   * How this kind's button reads when it covers more than this kind: the wording
+   * and glyph then have to name the group rather than the kind that happens to
+   * own the button. Omitted where the two are the same thing.
+   */
+  button?: { plural: string; hint: string; Icon: (props: IconProps) => ReactElement };
 }
 
 export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
@@ -140,8 +146,18 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     kind: 'hook_blocking_error',
     label: 'hook error',
     plural: 'hook errors',
-    hint: 'a hook got in the way of the run — one that refused a tool call and handed the model the error instead of a result, or one that failed and was let through anyway',
+    hint: 'a hook refused a tool call, and the model was handed the error instead of a result',
     Icon: BlockedIcon,
+    // The one button for every hook the harness ran. "What did my hooks do?" is
+    // a single question, and splitting it across buttons meant answering it
+    // twice; the stop hooks outnumber the failures by roughly ten to one, but
+    // they arrive grey against the failures' red, so the rare row still reads
+    // as the rare row.
+    button: {
+      plural: 'hook steps',
+      hint: 'everything the hooks did — one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran',
+      Icon: HookIcon,
+    },
   },
   {
     kind: 'hook_non_blocking_error',
@@ -170,7 +186,8 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     label: 'stop hooks',
     plural: 'stop hooks',
     hint: 'what the Stop hooks did when a turn ended — one row per turn, so most say only that they ran; the ones that matter are the errors and the refusals to stop',
-    Icon: StopHookIcon,
+    Icon: HookIcon,
+    toggleWith: 'hook_blocking_error',
   },
 ];
 
@@ -190,3 +207,13 @@ export const systemToggleOf = (kind?: string): string =>
 
 /** One button per group, in registry order — what the header renders. */
 export const SYSTEM_STEP_TOGGLES = SYSTEM_STEP_KINDS.filter(info => !info.toggleWith);
+
+/**
+ * Whether a `system` step records something going wrong, which is what decides
+ * whether its row is painted red. The parser makes the call — a hook that ran
+ * and a hook that fell over are the same kind of event — and a step that says
+ * nothing is treated as a failure, because every kind parsed before the field
+ * existed was one.
+ */
+export const isSystemFailure = (step: { systemSeverity?: string }): boolean =>
+  step.systemSeverity !== 'notice';

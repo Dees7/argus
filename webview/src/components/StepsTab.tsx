@@ -4,7 +4,7 @@ import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
-import { systemKindInfo } from './systemSteps';
+import { isSystemFailure, systemKindInfo } from './systemSteps';
 import { computeStepDurations } from '../utils/stepDurations';
 import { stripAnsi } from '../utils/ansi';
 import { askUserQuestionSummary, parseAskUserQuestion } from './askUserQuestion';
@@ -105,10 +105,16 @@ const stepIconProps = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none
 
 const StepIcon = ({ step }: { step: Step }) => {
   // Harness events carry the icon of their kind — the same glyph as the header
-  // button that brought them in, so the two read as one thing.
+  // button that brought them in, so the two read as one thing. Red only where
+  // something went wrong; the hooks that merely ran stay neutral.
   const systemInfo = systemKindInfo(step.systemKind);
   if (systemInfo) {
-    return <systemInfo.Icon className="step-icon step-icon-system" size={15} />;
+    return (
+      <systemInfo.Icon
+        className={`step-icon ${isSystemFailure(step) ? 'step-icon-system' : 'step-icon-system-notice'}`}
+        size={15}
+      />
+    );
   }
 
   const key = step.toolName || step.type;
@@ -1013,6 +1019,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                   step.type === 'compact' ? 'step-item-compact' : '',
                   step.type === 'user' ? 'step-item-user' : '',
                   step.type === 'system' ? 'step-item-system' : '',
+                  step.type === 'system' && !isSystemFailure(step) ? 'step-item-system-notice' : '',
                   isAgent ? 'step-item-agent' : '',
                   linkedAgents && !allCollapsed ? 'step-item-task' : '',
                   isFirstAgentInRun ? 'step-agent-first' : '',

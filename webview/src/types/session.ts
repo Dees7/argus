@@ -51,6 +51,10 @@ export interface Step {
   // and where it came from (a hook's name, …). See `components/systemSteps`.
   systemKind?: string;
   systemSource?: string;
+  // Set on steps of type `system` — whether the event was something going
+  // wrong (`error`, painted red) or merely something that happened
+  // (`notice`, painted neutral). Absent on kinds parsed before it existed.
+  systemSeverity?: 'error' | 'notice';
   content?: string;
   timestamp?: string;
   // Charged once per API response: the first step of a message carries the
