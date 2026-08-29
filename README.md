@@ -213,9 +213,9 @@ parsed — model fallbacks and the rest. They change how a session went and used
 to leave no trace in the timeline at all, so each one now becomes a `system`
 step.
 
-They are hidden by default. Every kind has its own button in the session
-header, to the right of the search toggle, showing how many of that kind the
-session holds; pressing it drops those steps into the timeline in place, and
+They are hidden by default. Each has its button in the session header, to the
+right of the search toggle, showing how many steps it would bring in; pressing
+it drops those steps into the timeline in place, and
 the button lights up while they are there. The state is per panel and is not
 remembered — closing the session puts the timeline back to what the model did.
 
@@ -224,6 +224,7 @@ Parsed so far:
 | kind | what it is |
 | --- | --- |
 | `hook error` | `attachment/hook_blocking_error` — a hook blocked a tool call and the model was handed the error instead of a result. The row shows which hook fired (`PostToolUse:Bash`) and the message; expanding it shows the whole thing, with the command that produced it. |
+| `hook failed` | `attachment/hook_non_blocking_error` — a hook exited non-zero and nothing stopped: the tool call went ahead, the turn ended, and this event is the only trace that the notification never fired or the formatter never ran. The row shows the hook, the command, whatever it printed and how it ended (`exit 126 · 9ms`). Shares the `hook error` button, because "did a hook get in the way?" is one question; the two stay separate rows in the type filter. |
 | `api error` | `system/api_error` — a request failed and was retried. The row shows what came back and which attempt it was (`429 · retry 1/10`) plus the message the response carried, dug out of whichever shape the error arrived in; expanding it prints the error object as JSON, request ids and proxy headers included. One row per attempt, so a burst of retries reads as the burst it was — and, with them shown, the wait they caused is split off the step before them instead of counting as model time. |
 
 A kind that is on screen is also a line of its own in the Steps tab's type

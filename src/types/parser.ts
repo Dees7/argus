@@ -43,8 +43,9 @@ export interface RawEvent {
   // `type: "attachment"` events. Mostly harness bookkeeping (skill listings,
   // token reminders), but `queued_command` carries a message the person typed
   // while a turn was still running — the only record of it in the transcript,
-  // and `hook_blocking_error` the error a hook handed back instead of a tool's
-  // result.
+  // `hook_blocking_error` the error a hook handed back instead of a tool's
+  // result, and `hook_non_blocking_error` a hook that failed without stopping
+  // anything — nothing else in the transcript says it did not run.
   attachment?: {
     type?: string;
     /** What was typed: a plain string, or content blocks when it has images. */
@@ -52,11 +53,15 @@ export interface RawEvent {
     commandMode?: string;
     origin?: { kind?: string };
 
-    // `hook_blocking_error`
+    // `hook_blocking_error`, `hook_non_blocking_error`
     /** Which hook fired, as `<event>:<matcher>` — `PostToolUse:Bash`. */
     hookName?: string;
     hookEvent?: string;
-    /** The `tool_use` block the hook fired on. */
+    /**
+     * What the hook fired on: the `tool_use` block for the `PreToolUse` and
+     * `PostToolUse` events, and — for `Stop`, which fires on no tool at all —
+     * the uuid of the message that ended the turn.
+     */
     toolUseID?: string;
     /**
      * The refusal. An object in every transcript we have seen; the string form
@@ -64,6 +69,17 @@ export interface RawEvent {
      * change should not lose it.
      */
     blockingError?: { blockingError?: string; command?: string } | string;
+
+    // `hook_non_blocking_error` — the hook's own execution, reported the way a
+    // shell would: what ran, what it printed, and how it ended.
+    /** The hook command as configured, `$HOME` and all — never expanded. */
+    command?: string;
+    exitCode?: number;
+    /** How long the hook itself took — single-digit milliseconds, typically. */
+    durationMs?: number;
+    stdout?: string;
+    /** Where the failure is spelled out; `stdout` is usually empty. */
+    stderr?: string;
   };
 
   // System-specific

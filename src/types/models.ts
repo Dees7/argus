@@ -123,6 +123,7 @@ export type StepType =
  */
 export type SystemStepKind =
   | 'hook_blocking_error'
+  | 'hook_non_blocking_error'
   | 'api_error'
   | 'local_command'
   | 'stop_hook_summary';

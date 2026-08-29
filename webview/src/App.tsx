@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SessionDetail, flattenSessionSteps, isSystemStep } from './types/session';
-import { SYSTEM_STEP_KINDS } from './components/systemSteps';
+import { SYSTEM_STEP_TOGGLES, systemToggleOf } from './components/systemSteps';
 import { formatModelLabel } from '../../src/types/modelFamily';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
@@ -32,12 +32,13 @@ function App() {
   const [tabsCollapsed, setTabsCollapsed] = useState(false);
   const [searchCollapsed, setSearchCollapsed] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
-  // Kinds of harness event currently shown in the timeline, one per header
-  // button. Deliberately local and deliberately not persisted: reading hook
-  // errors is something you do while chasing one thing down, not a way to
+  // Which header buttons are pressed — one entry per button, not per kind, so a
+  // button that covers two kinds brings both in at once (see `toggleWith` in
+  // `systemSteps`). Deliberately local and deliberately not persisted: reading
+  // hook errors is something you do while chasing one thing down, not a way to
   // read sessions, so closing the panel puts the timeline back to what the
   // model did.
-  const [visibleSystemKinds, setVisibleSystemKinds] = useState<Set<string>>(new Set());
+  const [visibleSystemToggles, setVisibleSystemToggles] = useState<Set<string>>(new Set());
   // Steps left after the Steps tab's own search/filters; null when that tab is
   // closed, in which case the header shows the plain total.
   const [stepsFilteredCount, setStepsFilteredCount] = useState<number | null>(null);
@@ -91,13 +92,14 @@ function App() {
     [session]
   );
 
-  // How many steps each kind of harness event contributes, for its button.
+  // How many steps each button would bring in — summed over the kinds it
+  // covers, so its count is what pressing it actually adds to the timeline.
   const systemStepCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const step of flatSteps) {
       if (!isSystemStep(step)) continue;
-      const kind = step.systemKind ?? '';
-      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+      const toggle = systemToggleOf(step.systemKind);
+      counts.set(toggle, (counts.get(toggle) ?? 0) + 1);
     }
     return counts;
   }, [flatSteps]);
@@ -107,9 +109,9 @@ function App() {
   const timelineSteps = useMemo(
     () =>
       flatSteps.filter(
-        step => !isSystemStep(step) || visibleSystemKinds.has(step.systemKind ?? '')
+        step => !isSystemStep(step) || visibleSystemToggles.has(systemToggleOf(step.systemKind))
       ),
-    [flatSteps, visibleSystemKinds]
+    [flatSteps, visibleSystemToggles]
   );
 
   // Every other tab measures the session — cost, context, durations, file
@@ -213,11 +215,11 @@ function App() {
   };
 
   // Nothing is sent to the host here: these live and die with the panel.
-  const toggleSystemKind = (kind: string) => {
-    setVisibleSystemKinds(prev => {
+  const toggleSystemKind = (toggle: string) => {
+    setVisibleSystemToggles(prev => {
       const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
+      if (next.has(toggle)) next.delete(toggle);
+      else next.add(toggle);
       return next;
     });
   };
@@ -303,11 +305,12 @@ function App() {
             {/* Past the divider the buttons no longer fold anything away —
                 each one brings a kind of harness event into the timeline, lit
                 while its steps are on screen and carrying how many there are.
-                One per kind, straight off the registry. */}
+                Straight off the registry, minus the kinds that ride on another
+                button rather than carrying one of their own. */}
             <span className="view-toggle-divider" />
-            {SYSTEM_STEP_KINDS.map(info => {
+            {SYSTEM_STEP_TOGGLES.map(info => {
               const count = systemStepCounts.get(info.kind) ?? 0;
-              const shown = visibleSystemKinds.has(info.kind);
+              const shown = visibleSystemToggles.has(info.kind);
               const action = shown ? 'Hide' : 'Show';
               return (
                 <button

@@ -549,6 +549,18 @@ export class ParserService {
         }
       }
 
+      // A hook that failed and was let through anyway. Nothing downstream shows
+      // it: the tool call went ahead, the turn ended, and the only trace that a
+      // notification never fired or a formatter never ran is this event. They
+      // repeat — the same unreadable script fails on every turn — which is the
+      // point, so each one stays its own row.
+      if (event.type === 'attachment' && event.attachment?.type === 'hook_non_blocking_error') {
+        const step = this.buildHookNonBlockingErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // A request that failed and was retried. The attempt that worked is
       // written as an ordinary assistant message, so without these the minute a
       // turn spent on ten 429s reads as the model having been slow.
@@ -871,6 +883,59 @@ export class ParserService {
       uuid: event.uuid,
       messageId: '',
       content: command && !text.includes(command) ? `$ ${command}\n\n${text}` : text,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Step for an `attachment/hook_non_blocking_error` event — a hook that failed
+   * without stopping anything.
+   *
+   * Read as a shell would report it: the command, what it printed, then how it
+   * ended. `stderr` carries the failure in every transcript we have and `stdout`
+   * is empty, but both are shown when both are there — a hook that logged its
+   * way up to the failure is exactly the one being read.
+   *
+   * The event names what the hook fired on in `toolUseID`; it is kept on the
+   * step so a `PostToolUse` failure can be tied back to its tool call. For a
+   * `Stop` hook, which fires on no tool, it is the uuid of the message that
+   * ended the turn.
+   */
+  private buildHookNonBlockingErrorStep(event: RawEvent, index: number): Step | null {
+    const attachment = event.attachment ?? {};
+    const command = typeof attachment.command === 'string' ? attachment.command.trim() : '';
+    const stderr = typeof attachment.stderr === 'string' ? attachment.stderr.trim() : '';
+    const stdout = typeof attachment.stdout === 'string' ? attachment.stdout.trim() : '';
+    const exitCode = typeof attachment.exitCode === 'number' ? attachment.exitCode : undefined;
+    const durationMs =
+      typeof attachment.durationMs === 'number' ? attachment.durationMs : undefined;
+
+    // The status line is the one part that is always knowable, so a hook that
+    // printed nothing still reaches the timeline saying it failed.
+    const status = [
+      exitCode !== undefined ? `exit ${exitCode}` : '',
+      durationMs !== undefined ? `${durationMs}ms` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const body = [command ? `$ ${command}` : '', stderr, stdout, status]
+      .filter(Boolean)
+      .join('\n\n');
+    if (!body) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'hook_non_blocking_error',
+      systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      toolUseId: typeof attachment.toolUseID === 'string' ? attachment.toolUseID : undefined,
+      content: body,
       cost: 0,
     };
   }

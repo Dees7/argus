@@ -5,11 +5,12 @@
  * A `system` step is not something the model did: nothing was billed for it and
  * no rule reasons about it, but it changed the run and the timeline had nothing
  * to show for it. So each kind stays hidden until the user presses its button
- * in the session header, and every kind gets its own button — a blocked tool
- * call, a retried request, a slash command and the stop hooks are separate
- * questions, and one switch for all of them would be no better than none: the
- * kind you came for would arrive buried in the ones you did not. The stop hooks
- * alone outnumber every other row in a long session.
+ * in the session header, and a button covers one question rather than all of
+ * them — a blocked tool call, a retried request, a slash command and the stop
+ * hooks are separate things to go looking for, and one switch for the lot would
+ * be no better than none: the kind you came for would arrive buried in the ones
+ * you did not. The stop hooks alone outnumber every other row in a long session.
+ * Kinds that answer the same question share a button via `toggleWith`.
  *
  * Adding a kind is an entry here plus a branch in the parser. Everything that
  * renders one — the header buttons, the step icon, the row's type column —
@@ -38,6 +39,25 @@ const BlockedIcon = ({ className, size = 13 }: IconProps) => (
   >
     <circle cx="12" cy="12" r="9" />
     <path d="m5.6 5.6 12.8 12.8" />
+  </svg>
+);
+
+/** Warning triangle: the hook broke, and the run carried on regardless. */
+const HookFailedIcon = ({ className, size = 13 }: IconProps) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M10.3 3.9 2.4 17.5a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+    <path d="M12 9v4" />
+    <path d="M12 17h.01" />
   </svg>
 );
 
@@ -105,6 +125,14 @@ export interface SystemStepKindInfo {
   /** What the kind means, appended to the button's tooltip. */
   hint: string;
   Icon: (props: IconProps) => ReactElement;
+  /**
+   * The kind whose button brings this one in, for a kind that gets no button of
+   * its own. Two kinds that answer the same question — "did a hook get in the
+   * way?" — are one thing to switch on and two things to read, so they share a
+   * button and keep their own label and icon in the row. Omitted by every kind
+   * that stands on its own, which is the normal case.
+   */
+  toggleWith?: string;
 }
 
 export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
@@ -112,8 +140,16 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     kind: 'hook_blocking_error',
     label: 'hook error',
     plural: 'hook errors',
-    hint: 'a hook refused a tool call, and the model was handed the error instead of a result',
+    hint: 'a hook got in the way of the run — one that refused a tool call and handed the model the error instead of a result, or one that failed and was let through anyway',
     Icon: BlockedIcon,
+  },
+  {
+    kind: 'hook_non_blocking_error',
+    label: 'hook failed',
+    plural: 'hook failures',
+    hint: 'a hook exited non-zero and nothing stopped — the notification never fired, the formatter never ran, and this event is the only trace',
+    Icon: HookFailedIcon,
+    toggleWith: 'hook_blocking_error',
   },
   {
     kind: 'api_error',
@@ -143,3 +179,14 @@ const BY_KIND = new Map(SYSTEM_STEP_KINDS.map(info => [info.kind, info]));
 /** Undefined for a kind this build doesn't know — the step still renders. */
 export const systemKindInfo = (kind?: string): SystemStepKindInfo | undefined =>
   kind ? BY_KIND.get(kind) : undefined;
+
+/**
+ * Which button governs a kind: its own, unless it rides on another's. A kind
+ * this build doesn't know governs itself, so a step from a newer parser is
+ * still reachable by a button of its own name.
+ */
+export const systemToggleOf = (kind?: string): string =>
+  (kind ? BY_KIND.get(kind)?.toggleWith : undefined) ?? kind ?? '';
+
+/** One button per group, in registry order — what the header renders. */
+export const SYSTEM_STEP_TOGGLES = SYSTEM_STEP_KINDS.filter(info => !info.toggleWith);
