@@ -28,6 +28,19 @@ export interface RawEvent {
   toolUseResult?: any;
   sourceToolAssistantUUID?: string;
 
+  /**
+   * Why a tool call never ran, on the same event that carries its (errored)
+   * `tool_result`: `user-rejected`, `permission-rule`, `automode-blocked`,
+   * `automode-unavailable`, `cancelled`. The only field in a transcript that
+   * names who stopped a call — written since CLI 2.1.198; older sessions record
+   * the refusal in the result text alone, with no source.
+   *
+   * There is no counterpart for calls that went ahead: a permitted call is
+   * indistinguishable from one an allow-rule or the auto-mode classifier let
+   * through, unless a `PreToolUse` hook decided it and said so.
+   */
+  toolDenialKind?: string;
+
   // Set on the synthetic user event Claude Code writes when it compacts the
   // conversation: `message.content` is the hand-off summary that replaces the
   // dropped history. The only unambiguous compaction marker in a transcript.
@@ -77,6 +90,13 @@ export interface RawEvent {
     exitCode?: number;
     /** How long the hook itself took — single-digit milliseconds, typically. */
     durationMs?: number;
+    /**
+     * What the hook printed. On `hook_success` for `PreToolUse` this is the
+     * JSON a hook answers with, and the only place a permission decision is
+     * ever recorded: `{"hookSpecificOutput": {"permissionDecision": "allow",
+     * "permissionDecisionReason": "…"}}`. A hook that merely observed the call
+     * leaves it empty.
+     */
     stdout?: string;
     /** Where the failure is spelled out; `stdout` is usually empty. */
     stderr?: string;

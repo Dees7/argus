@@ -36,6 +36,22 @@ export interface Attachment {
   name: string;
 }
 
+/**
+ * Who allowed or refused a tool call. Set only where the transcript says so —
+ * a refusal (which names its source since CLI 2.1.198) or a `PreToolUse` hook
+ * that decided out loud. A call that simply ran carries nothing: a person
+ * clicking "allow", an allow-rule and the auto-mode classifier all look the
+ * same afterwards, so the UI says nothing rather than guessing.
+ */
+export interface StepPermission {
+  outcome: 'allowed' | 'denied';
+  /** `unknown` — an older transcript that recorded the refusal but not its source. */
+  decidedBy: 'user' | 'rule' | 'automode' | 'hook' | 'unknown';
+  label: string;
+  reason?: string;
+  hookName?: string;
+}
+
 export interface Step {
   index: number;
   type: string;
@@ -47,6 +63,9 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  // Who let this call run, or stopped it. Absent on most calls: only a refusal
+  // and a `PreToolUse` hook's verdict are on the record — see `StepPermission`.
+  permission?: StepPermission;
   // Set on steps of type `system` — which harness event the step stands for,
   // and where it came from (a hook's name, …). See `components/systemSteps`.
   systemKind?: string;

@@ -152,6 +152,30 @@ export interface Attachment {
   name: string;
 }
 
+/**
+ * Who let a tool call run, or stopped it — set on a `tool_call` step only when
+ * the transcript actually says. It is silent far more often than not: a call
+ * that simply went ahead carries nothing, because a person clicking "allow", an
+ * allow-rule in settings and the auto-mode classifier are indistinguishable
+ * once the call has run. Only two things are on the record — a refusal
+ * (`toolDenialKind`, which names its source) and a `PreToolUse` hook that
+ * decided out loud.
+ */
+export interface StepPermission {
+  outcome: 'allowed' | 'denied';
+  /**
+   * `unknown` is for pre-2.1.198 transcripts, which recorded that a call was
+   * refused but not by what.
+   */
+  decidedBy: 'user' | 'rule' | 'automode' | 'hook' | 'unknown';
+  /** One line for the UI — "Denied by user", "Allowed by hook". */
+  label: string;
+  /** What the decider said: a hook's reason, or the one a person typed. */
+  reason?: string;
+  /** `PreToolUse:Bash`, when a hook decided. */
+  hookName?: string;
+}
+
 export interface Step {
   index: number;
   type: StepType;
@@ -166,6 +190,8 @@ export interface Step {
   toolResult?: string;
   toolSuccess?: boolean;
   toolUseId?: string;
+  /** Who allowed or refused this call, when the transcript says — see `StepPermission`. */
+  permission?: StepPermission;
   /** Set on `system` steps only — which harness event this one stands for. */
   systemKind?: SystemStepKind;
   /**

@@ -341,6 +341,23 @@ const Dropdown = ({ id, icon, label, items, selected, onSelect, isActive, multiS
   );
 };
 
+/* ── Status labels ── */
+// The permission entries name the decider, not the outcome: "Denied" already
+// says what happened, and the reason to filter on one of these is to find the
+// calls a rule stopped, or the ones a hook waved through.
+const STATUS_LABELS: Record<string, string> = {
+  all: 'Status',
+  success: 'Success',
+  failed: 'Failed',
+  issues: 'Has Issues',
+  allowed: 'Allowed by hook',
+  denied: 'Denied (any)',
+  'denied-user': 'Denied by user',
+  'denied-rule': 'Denied by rule',
+  'denied-automode': 'Blocked by auto mode',
+  'denied-hook': 'Denied by hook',
+};
+
 /* ── Sort labels ── */
 const SORT_LABELS: Record<string, string> = {
   newest: 'Newest',
@@ -613,15 +630,37 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     });
   }, [toolCounts]);
 
-  // Status counts
+  // Status counts. The permission buckets count what the transcript actually
+  // recorded, which is far fewer steps than ran: a call nobody stopped and no
+  // hook spoke for has no permission at all, so `allowed + denied` is not the
+  // step total and is not meant to be.
   const statusCounts = useMemo(() => {
-    let success = 0, failed = 0, issues = 0;
+    const counts = {
+      success: 0,
+      failed: 0,
+      issues: 0,
+      allowed: 0,
+      denied: 0,
+      'denied-user': 0,
+      'denied-rule': 0,
+      'denied-automode': 0,
+      'denied-hook': 0,
+    };
     steps.forEach(s => {
-      if (s.toolSuccess === true) success++;
-      if (s.toolSuccess === false) failed++;
-      if (stepFindings.has(keyOf(s))) issues++;
+      if (s.toolSuccess === true) counts.success++;
+      if (s.toolSuccess === false) counts.failed++;
+      if (stepFindings.has(keyOf(s))) counts.issues++;
+      const p = s.permission;
+      if (!p) return;
+      if (p.outcome === 'allowed') {
+        counts.allowed++;
+        return;
+      }
+      counts.denied++;
+      const bucket = `denied-${p.decidedBy}` as keyof typeof counts;
+      if (bucket in counts) counts[bucket]++;
     });
-    return { success, failed, issues };
+    return counts;
   }, [steps, stepFindings]);
 
   // Build tool dropdown items
@@ -663,14 +702,33 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     return items;
   }, [toolCounts, steps.length]);
 
-  // Build status dropdown items
-  const statusItems: (DropdownItem | 'separator')[] = useMemo(() => [
-    { value: 'all', label: 'All', count: steps.length },
-    'separator',
-    { value: 'success', label: 'Success', count: statusCounts.success },
-    { value: 'failed', label: 'Failed', count: statusCounts.failed },
-    { value: 'issues', label: 'Has Issues', count: statusCounts.issues },
-  ], [steps.length, statusCounts]);
+  // Build status dropdown items. The permission entries are listed only where
+  // there is something to list: most sessions have no refusal and no hook
+  // verdict at all, and five permanently-zero rows would bury the three
+  // statuses that always mean something.
+  const statusItems: (DropdownItem | 'separator')[] = useMemo(() => {
+    const items: (DropdownItem | 'separator')[] = [
+      { value: 'all', label: 'All', count: steps.length },
+      'separator',
+      { value: 'success', label: 'Success', count: statusCounts.success },
+      { value: 'failed', label: 'Failed', count: statusCounts.failed },
+      { value: 'issues', label: 'Has Issues', count: statusCounts.issues },
+    ];
+    const permission: DropdownItem[] = ([
+      ['allowed', STATUS_LABELS.allowed],
+      ['denied', STATUS_LABELS.denied],
+      ['denied-user', STATUS_LABELS['denied-user']],
+      ['denied-rule', STATUS_LABELS['denied-rule']],
+      ['denied-automode', STATUS_LABELS['denied-automode']],
+      ['denied-hook', STATUS_LABELS['denied-hook']],
+    ] as [keyof typeof statusCounts, string][])
+      .filter(([key]) => statusCounts[key] > 0)
+      .map(([key, label]) => ({ value: key, label, count: statusCounts[key] }));
+    if (permission.length > 0) {
+      items.push('separator', ...permission);
+    }
+    return items;
+  }, [steps.length, statusCounts]);
 
   // Build sort dropdown items
   const sortItems: (DropdownItem | 'separator')[] = [
@@ -708,6 +766,12 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     if (statusFilter === 'success') result = result.filter(s => s.toolSuccess === true);
     if (statusFilter === 'failed') result = result.filter(s => s.toolSuccess === false);
     if (statusFilter === 'issues') result = result.filter(s => stepFindings.has(keyOf(s)));
+    if (statusFilter === 'allowed') result = result.filter(s => s.permission?.outcome === 'allowed');
+    if (statusFilter === 'denied') result = result.filter(s => s.permission?.outcome === 'denied');
+    if (statusFilter.startsWith('denied-')) {
+      const by = statusFilter.slice('denied-'.length);
+      result = result.filter(s => s.permission?.outcome === 'denied' && s.permission.decidedBy === by);
+    }
 
     // Hide steps whose owning agent — or any of its ancestors — is collapsed
     if (collapsedAgents.size > 0) {
@@ -875,7 +939,8 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
       : toolFilter.size === 1
         ? filterKeyLabel([...toolFilter][0])
         : `${toolFilter.size} tools`;
-  const statusLabel = statusFilter === 'all' ? 'Status' : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
+  const statusLabel =
+    STATUS_LABELS[statusFilter] ?? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
   const hasActiveFilters = searchQuery !== '' || toolFilter.size > 0 || statusFilter !== 'all' || sortMode !== defaultSortMode;
 
   const clearAllFilters = () => {

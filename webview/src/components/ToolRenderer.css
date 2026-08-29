@@ -106,6 +106,13 @@
   min-width: 0;
 }
 
+.tr-toolbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .tr-toggle {
   display: inline-flex;
   align-items: center;
@@ -113,6 +120,77 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
+}
+
+/* Permission toggle — its own pill beside the view switch. Deliberately not
+   coloured by the verdict: the whole step is already painted for a refusal,
+   and a second red thing in the same strip only competes with it. */
+.tr-permission-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.tr-permission-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.tr-permission-btn:hover {
+  color: var(--text);
+}
+
+.tr-permission-btn.open {
+  background: rgba(128, 128, 128, 0.22);
+  color: var(--text-bright);
+}
+
+/* The detail row the button opens: who decided, which hook, and what they
+   said. Neutral by design — it explains the step's colour, it does not add
+   to it. */
+.tr-permission-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.tr-permission-label {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.tr-permission-hook {
+  font-family: var(--font-code), monospace;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.tr-permission-reason {
+  color: var(--text-dim);
+  min-width: 0;
+  word-break: break-word;
 }
 
 .tr-toggle-btn {

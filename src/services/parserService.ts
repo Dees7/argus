@@ -7,6 +7,7 @@ import {
   HistoryEntry,
   SessionDetail,
   Step,
+  StepPermission,
   SubagentInfo,
   calculateCost,
   getModelPricing,
@@ -187,6 +188,79 @@ function attachTo(step: Step, attachments: Attachment[]): void {
     list.push(attachment);
   }
   step.attachments = list;
+}
+
+/**
+ * `toolDenialKind` → who stopped the call. Every value Claude Code writes is
+ * here; an unrecognised one still becomes a step permission (with the raw kind
+ * as its label) rather than disappearing, because the fact that a call was
+ * refused matters more than our knowing the word for it.
+ */
+const DENIAL_SOURCES: Record<string, { decidedBy: StepPermission['decidedBy']; label: string }> = {
+  'user-rejected': { decidedBy: 'user', label: 'Denied by user' },
+  'permission-rule': { decidedBy: 'rule', label: 'Denied by permission rule' },
+  'automode-blocked': { decidedBy: 'automode', label: 'Blocked by auto mode' },
+  'automode-unavailable': { decidedBy: 'automode', label: 'Auto mode unavailable' },
+  cancelled: { decidedBy: 'user', label: 'Cancelled by user' },
+};
+
+// The reason travels inside the refusal text rather than a field of its own:
+// what the person typed when they said no, and what the auto-mode classifier
+// objected to. Both are the sentence after a fixed lead-in.
+const USER_REASON_RE = /following reason for the rejection:\s*([\s\S]+)$/i;
+const AUTOMODE_REASON_RE = /auto mode classifier\.\s*Reason:\s*([\s\S]*?)(?:\s*If you have other tasks|$)/i;
+
+// Pre-2.1.198 transcripts have no `toolDenialKind`. This sentence is all that
+// is left of a refusal there — it says a call was stopped, never by what.
+const LEGACY_DENIAL_RE = /user doesn't want to proceed with this tool use/i;
+
+/**
+ * What a refusal says, as one line. Never the whole message: the full text is
+ * already in the tool result below it, and the boilerplate about not working
+ * around the denial is the same on every one of them.
+ */
+function denialReason(text: string): string | undefined {
+  const reason = USER_REASON_RE.exec(text)?.[1] ?? AUTOMODE_REASON_RE.exec(text)?.[1];
+  return reason?.trim() || undefined;
+}
+
+/** The refusal text, whatever shape `toolUseResult` took on this transcript. */
+function denialText(result: any, fallback: string): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (result && typeof result === 'object' && typeof (result as any).content === 'string') {
+    return (result as any).content;
+  }
+  return fallback;
+}
+
+/**
+ * The decision a `PreToolUse` hook printed, or null when it printed nothing —
+ * a hook that only observed the call, or one whose output is not the JSON
+ * Claude Code reads. `ask` is a decision to not decide: it hands the call to
+ * the person, so whatever happened next is off the record and the step is left
+ * unmarked.
+ */
+function hookDecision(attachment: RawEvent['attachment']): StepPermission | null {
+  const parsed = tryParseJson(attachment?.stdout ?? '');
+  const output = parsed?.hookSpecificOutput;
+  const decision = output?.permissionDecision;
+  if (decision !== 'allow' && decision !== 'deny') {
+    return null;
+  }
+  const hookName = typeof attachment?.hookName === 'string' ? attachment.hookName : undefined;
+  const reason =
+    typeof output.permissionDecisionReason === 'string'
+      ? output.permissionDecisionReason.trim() || undefined
+      : undefined;
+  return {
+    outcome: decision === 'allow' ? 'allowed' : 'denied',
+    decidedBy: 'hook',
+    label: decision === 'allow' ? 'Allowed by hook' : 'Denied by hook',
+    reason,
+    hookName,
+  };
 }
 
 interface QuickMetadata {
@@ -549,6 +623,39 @@ export class ParserService {
         }
       }
 
+      // A `PreToolUse` hook's verdict on the call it fired on. The transcript
+      // writes it between the `tool_use` and its result, so the step it belongs
+      // to is already built. This is the only place a permission that let a
+      // call *through* is ever recorded — everything else on the record is a
+      // refusal — so it is worth reading even though most of them are a
+      // whitelist saying yes to a `git status`.
+      if (event.type === 'attachment' && event.attachment?.hookEvent === 'PreToolUse') {
+        const target = event.attachment.toolUseID
+          ? toolCallByUseId.get(event.attachment.toolUseID)
+          : undefined;
+        if (target && typeof target.index === 'number') {
+          const decision =
+            event.attachment.type === 'hook_blocking_error'
+              ? // A hook that blocked the call: it gets its own system step for
+                // the error text, but the call itself should say why it never ran.
+                ({
+                  outcome: 'denied',
+                  decidedBy: 'hook',
+                  label: 'Denied by hook',
+                  hookName:
+                    typeof event.attachment.hookName === 'string'
+                      ? event.attachment.hookName
+                      : undefined,
+                } as StepPermission)
+              : hookDecision(event.attachment);
+          // A refusal already on the step outranks a hook's yes: two hooks can
+          // fire on one call, and the one that stopped it is the answer.
+          if (decision && steps[target.index].permission?.outcome !== 'denied') {
+            steps[target.index].permission = decision;
+          }
+        }
+      }
+
       // A hook that failed and was let through anyway. Nothing downstream shows
       // it: the tool call went ahead, the turn ended, and the only trace that a
       // notification never fired or a formatter never ran is this event. They
@@ -800,6 +907,31 @@ export class ParserService {
               isError = true;
             }
             steps[toolStep.index].toolSuccess = !isError;
+
+            // Why the call never ran, when it did not. `toolDenialKind` names
+            // the source outright; older transcripts only have the sentence the
+            // model was shown, which says a call was refused but not by whom —
+            // recorded as `unknown` rather than guessed at.
+            if (isError) {
+              const text = denialText(result, typeof block?.content === 'string' ? block.content : '');
+              const kind = event.toolDenialKind;
+              if (typeof kind === 'string' && kind) {
+                const known = DENIAL_SOURCES[kind];
+                steps[toolStep.index].permission = {
+                  outcome: 'denied',
+                  decidedBy: known?.decidedBy ?? 'unknown',
+                  label: known?.label ?? `Denied (${kind})`,
+                  reason: denialReason(text),
+                };
+              } else if (LEGACY_DENIAL_RE.test(text)) {
+                steps[toolStep.index].permission = {
+                  outcome: 'denied',
+                  decidedBy: 'unknown',
+                  label: 'Denied — source not recorded',
+                  reason: denialReason(text),
+                };
+              }
+            }
 
             // Screenshots and other blobs a tool handed back. They belong to
             // the call that produced them, so they hang off the tool step

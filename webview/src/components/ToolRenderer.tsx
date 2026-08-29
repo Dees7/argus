@@ -712,6 +712,10 @@ interface ToolRendererProps {
 
 const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   const [view, setView] = useState<View>('pretty');
+  // Collapsed by default: the button already says allowed or denied, and the
+  // step itself is painted, so the detail is only opened when the question is
+  // "by what", not "did it run".
+  const [permissionOpen, setPermissionOpen] = useState(false);
   const tool = step.toolName;
   // Capitalised because it is rendered as an element below, not called: a
   // renderer with hooks of its own needs its own fiber, or its hooks land in
@@ -732,6 +736,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   const active: View = !hasPretty && view === 'pretty' ? 'raw' : view;
   const isError = step.toolSuccess === false;
   const errorMessage = isError ? extractErrorMessage(parsed.value) : '';
+  const permission = step.permission;
 
   return (
     <div className={`tool-renderer${isError ? ' tool-renderer-error' : ''}`}>
@@ -742,35 +747,66 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
         </div>
         {/* Tools without a dedicated renderer (MCP ones especially) still get
             the bar — Raw/Wrap only — so the toolbar's token counts have a
-            consistent home. */}
-        <div className="tr-toggle">
-          {hasPretty && (
-            <button
-              className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
-              onClick={() => setView('pretty')}
-              type="button"
-            >
-              Pretty
-            </button>
+            consistent home. The permission toggle sits beside it as a group of
+            its own: it switches a detail row on, not the view. */}
+        <div className="tr-toolbar-right">
+          {permission && (
+            <div className="tr-permission-toggle">
+              <button
+                className={`tr-permission-btn${permissionOpen ? ' open' : ''}`}
+                onClick={() => setPermissionOpen(open => !open)}
+                type="button"
+                aria-expanded={permissionOpen}
+                title={permission.label}
+              >
+                {permission.outcome === 'allowed' ? 'Allowed' : 'Denied'}
+              </button>
+            </div>
           )}
-          <button
-            className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
-            onClick={() => setView('raw')}
-            type="button"
-            title={hasPretty ? undefined : 'No pretty view for this tool'}
-          >
-            Raw
-          </button>
-          <button
-            className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
-            onClick={() => setView('wrap')}
-            type="button"
-            title="Raw view with long lines wrapped to the panel width"
-          >
-            Wrap
-          </button>
+          <div className="tr-toggle">
+            {hasPretty && (
+              <button
+                className={`tr-toggle-btn${active === 'pretty' ? ' active' : ''}`}
+                onClick={() => setView('pretty')}
+                type="button"
+              >
+                Pretty
+              </button>
+            )}
+            <button
+              className={`tr-toggle-btn${active === 'raw' ? ' active' : ''}`}
+              onClick={() => setView('raw')}
+              type="button"
+              title={hasPretty ? undefined : 'No pretty view for this tool'}
+            >
+              Raw
+            </button>
+            <button
+              className={`tr-toggle-btn${active === 'wrap' ? ' active' : ''}`}
+              onClick={() => setView('wrap')}
+              type="button"
+              title="Raw view with long lines wrapped to the panel width"
+            >
+              Wrap
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Who decided, opened from the toolbar. Sits directly under the token
+          counts, and stays out of the pretty/raw switch: the decision is a
+          fact about the call, not one of its views. */}
+      {permission && permissionOpen && (
+        <div className="tr-permission-row">
+          <span className="tr-permission-label">{permission.label}</span>
+          {permission.hookName && (
+            <span className="tr-permission-hook">{permission.hookName}</span>
+          )}
+          {permission.reason && (
+            <span className="tr-permission-reason">{permission.reason}</span>
+          )}
+        </div>
+      )}
 
       {/* Error banner — pretty view only. The full message is shown verbatim
           (no truncation) so the operator can debug from a glance. The raw
