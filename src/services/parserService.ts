@@ -150,6 +150,94 @@ function walkBlobs(
   }
 }
 
+/**
+ * The transcript reordered so a `tool_result` never precedes the `tool_use` it
+ * answers. Ordinarily it cannot: the call is written, then the result. But a
+ * tool the harness resolves in-process — ToolSearch above all — finishes in the
+ * same millisecond it was requested, and the two lines occasionally reach the
+ * file inverted. The parent chain still records which happened first; only the
+ * byte order lies. Reading such a session forward, the result arrives before
+ * any step exists to hang it on and is dropped, so the call renders with no
+ * output at all.
+ *
+ * Inverted events are moved to just after their call. Everything else keeps
+ * its place, and a transcript with nothing out of order comes back untouched.
+ */
+function orderToolResults(events: RawEvent[]): RawEvent[] {
+  // Where each `tool_use` id was requested.
+  const callAt = new Map<string, number>();
+  events.forEach((event, i) => {
+    const content = event.message?.content;
+    if (!Array.isArray(content)) {
+      return;
+    }
+    for (const block of content as any[]) {
+      if (block?.type === 'tool_use' && typeof block.id === 'string' && !callAt.has(block.id)) {
+        callAt.set(block.id, i);
+      }
+    }
+  });
+
+  // Position to sort by: its own index, except for a result that ran ahead of
+  // its call, which lands immediately behind the last call it answers. Ties
+  // keep their relative order, so two results of one message stay paired with
+  // it in the order the transcript wrote them.
+  let inverted = false;
+  const keyed = events.map((event, i) => {
+    const content = event.message?.content;
+    let key = i;
+    if (Array.isArray(content)) {
+      for (const block of content as any[]) {
+        if (block?.type !== 'tool_result') {
+          continue;
+        }
+        const at = callAt.get(block.tool_use_id);
+        if (at !== undefined && at > i) {
+          key = Math.max(key, at + 0.5);
+          inverted = true;
+        }
+      }
+    }
+    return { event, key, i };
+  });
+
+  if (!inverted) {
+    return events;
+  }
+  return keyed
+    .sort((a, b) => (a.key === b.key ? a.i - b.i : a.key - b.key))
+    .map(entry => entry.event);
+}
+
+/**
+ * The same value with every base64 payload replaced by a one-line marker. A
+ * result that carried a screenshot would otherwise be held twice — once as the
+ * megabytes on `step.toolResult`, once as the attachment the webview fetches
+ * on demand — and the raw view would be a wall of base64. The bytes stay
+ * reachable: `collectEventAttachments` indexes them by path in the untouched
+ * event.
+ */
+function withoutBlobBytes(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(withoutBlobBytes);
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const blob = readBlobNode(value);
+  if (blob) {
+    const marker = `[base64 · ${base64Size(blob[0])} bytes]`;
+    return typeof value.base64 === 'string'
+      ? { ...value, base64: marker }
+      : { ...value, data: marker };
+  }
+  const copy: Record<string, any> = {};
+  for (const [key, child] of Object.entries(value)) {
+    copy[key] = withoutBlobBytes(child);
+  }
+  return copy;
+}
+
 /** A blob found in an event, with the path that leads back to its bytes. */
 interface EventAttachment {
   path: string;
@@ -491,11 +579,15 @@ export class ParserService {
    * Build a SessionDetail from parsed events
    */
   buildSession(
-    events: RawEvent[],
+    rawEvents: RawEvent[],
     sessionId: string,
     prompt: string,
     project: string
   ): SessionDetail {
+    // A single forward pass reads each result against the calls seen so far,
+    // so the few results a transcript records ahead of their call are put
+    // back behind them first.
+    const events = orderToolResults(rawEvents);
     const steps: Step[] = [];
     const filesRead = new Set<string>();
     const filesWritten = new Set<string>();
@@ -893,7 +985,7 @@ export class ParserService {
             }
 
             const result = legacyApplies
-              ? event.toolUseResult
+              ? withoutBlobBytes(event.toolUseResult)
               : this.extractToolResultBody(block);
             if (result !== undefined) {
               steps[toolStep.index].toolResult = JSON.stringify(result);
@@ -1319,12 +1411,18 @@ export class ParserService {
   }
 
   /**
-   * The body of a `tool_result` content block, flattened to text. The `content`
-   * field is either a plain string or a list of blocks: `text` for ordinary
-   * output, `tool_reference` for a ToolSearch result (which names the tools it
-   * loaded and carries no other payload), `image` for screenshots.
+   * The body of a `tool_result` content block. The `content` field is either a
+   * plain string or a list of blocks — `text`, `image`, `tool_reference`,
+   * `search_result`, `document`, plus the MCP-only `audio`, `resource` and
+   * `resource_link` that a server can hand back.
+   *
+   * A list of nothing but text is flattened, because that is what it is and it
+   * keeps the step searchable as prose. Any other list is kept block by block:
+   * flattening it used to mean silently dropping every type this method had no
+   * branch for, and the renderer can only lay out what reaches it. Base64
+   * payloads are dropped on the way through — the attachment carries them.
    */
-  private extractToolResultBody(block: any): string | undefined {
+  private extractToolResultBody(block: any): string | any[] | undefined {
     if (!block) {
       return undefined;
     }
@@ -1333,19 +1431,13 @@ export class ParserService {
       return content;
     }
     if (Array.isArray(content)) {
-      const parts: string[] = [];
-      for (const c of content) {
-        if (typeof c === 'string') {
-          parts.push(c);
-        } else if (c?.type === 'text' && typeof c.text === 'string') {
-          parts.push(c.text);
-        } else if (c?.type === 'tool_reference' && typeof c.tool_name === 'string') {
-          parts.push(c.tool_name);
-        } else if (c?.type === 'image') {
-          parts.push('[image]');
-        }
+      const textOnly = content.every(
+        c => typeof c === 'string' || (c?.type === 'text' && typeof c.text === 'string')
+      );
+      if (!textOnly) {
+        return withoutBlobBytes(content);
       }
-      return parts.join('\n');
+      return content.map(c => (typeof c === 'string' ? c : c.text)).join('\n');
     }
     if (content === undefined || content === null) {
       return undefined;

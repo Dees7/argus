@@ -5,6 +5,7 @@ import { Attachment, Step } from '../types/session';
 import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { parseAskUserQuestion } from './askUserQuestion';
+import { ResultBlocksRenderer, ToolSearchRenderer, asResultBlocks } from './resultBlocks';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
 
@@ -698,6 +699,7 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,
   AskUserQuestion: AskUserQuestionRenderer,
+  ToolSearch: ToolSearchRenderer,
 };
 
 // pretty = per-tool renderer, raw = JSON dump with horizontal scroll,
@@ -721,8 +723,12 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
   // renderer with hooks of its own needs its own fiber, or its hooks land in
   // this component's hook list and vanish the moment the view switches away
   // from pretty.
-  const Renderer = tool ? RENDERERS[tool] : undefined;
   const parsed = useMemo(() => parseToolResult(step.toolResult), [step.toolResult]);
+  // A tool nobody wrote a renderer for still gets one when its result came
+  // back as content blocks — which is how every MCP server answers.
+  const blocks = useMemo(() => asResultBlocks(parsed.value), [parsed.value]);
+  const Renderer =
+    (tool ? RENDERERS[tool] : undefined) ?? (blocks ? ResultBlocksRenderer : undefined);
   const attachments = step.attachments ?? [];
 
   // No tool data at all — nothing to render.

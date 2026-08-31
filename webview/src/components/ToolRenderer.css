@@ -539,7 +539,7 @@
   padding: 10px 12px;
   font-family: var(--font-code), monospace;
   font-size: 12px;
-  line-height: 1;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: none;
@@ -712,6 +712,7 @@
 .tr-todo-pending {
   color: var(--text-dim);
 }
+
 .tr-todo-pending .tr-todo-icon {
   color: var(--text-dim);
 }
@@ -720,6 +721,7 @@
   color: var(--text-bright);
   font-weight: 600;
 }
+
 .tr-todo-in_progress .tr-todo-icon {
   color: var(--status-info);
 }
@@ -729,12 +731,13 @@
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--text-dim) 50%, transparent);
 }
+
 .tr-todo-completed .tr-todo-icon {
   color: var(--status-success);
 }
 
 /* ─── AskUserQuestion ────────────────────────────────────────────── */
-.tr-ask-question + .tr-ask-question {
+.tr-ask-question+.tr-ask-question {
   border-top: 1px solid var(--border);
 }
 
@@ -835,7 +838,7 @@
   font-size: 11.5px;
 }
 
-.tr-ask-preview > summary {
+.tr-ask-preview>summary {
   cursor: pointer;
   color: var(--text-dim);
   font-family: var(--font-code), monospace;
@@ -845,7 +848,7 @@
   user-select: none;
 }
 
-.tr-ask-preview > pre,
+.tr-ask-preview>pre,
 .tr-ask-custom {
   margin: 4px 0 0;
   padding: 7px 9px;
@@ -879,6 +882,6 @@
   flex-direction: column;
 }
 
-.tr-raw-section + .tr-raw-section {
+.tr-raw-section+.tr-raw-section {
   border-top: 1px solid var(--border);
 }
