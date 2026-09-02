@@ -218,6 +218,14 @@ export interface ContextMetrics {
   compactionPoints: number[];
 }
 
+/**
+ * The number a step is shown and navigated by across tabs: its `globalIndex`,
+ * falling back to the local index for steps that never went through
+ * `flattenSessionSteps`. Anything that renders "#N" or calls `onGoToStep` has
+ * to agree on this, or the highlight lands on the wrong row.
+ */
+export const stepKey = (step: Step): number => step.globalIndex ?? step.index;
+
 export interface Finding {
   rule?: string;
   severity: 'error' | 'warning' | 'info';

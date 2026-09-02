@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Step } from '../types/session';
+import { Step, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
 
 interface Props {
@@ -9,8 +9,13 @@ interface Props {
   onGoToStep?: (index: number) => void;
 }
 
+type SeriesKey = 'cacheRead' | 'freshInput' | 'cacheWrite' | 'output';
+
 interface Point {
+  /** `globalIndex`: what the Steps tab shows and navigates by. */
   index: number;
+  /** Index within the main session: what the analyzer's findings refer to. */
+  localIndex: number;
   step: string;
   cacheRead: number;
   freshInput: number;
@@ -19,10 +24,24 @@ interface Point {
   output: number;
 }
 
-const COLOR_CACHE_READ = '#5eead4';
-const COLOR_INPUT = '#06b6d4';
-const COLOR_CACHE_WRITE = '#fbbf24';
-const COLOR_OUTPUT = '#8b5cf6';
+interface Series {
+  key: SeriesKey;
+  label: string;
+  color: string;
+  /** Billed rate as a multiple of the model's base input rate, see pricing.ts. */
+  rate: string;
+}
+
+// Nothing here is free: cache reads bill at CACHE_READ_RATIO of the input rate,
+// cache writes at 1.25x (5m TTL) or 2x (1h), and every model in the price table
+// charges output at 5x its input rate.
+const PROMPT_SERIES: Series[] = [
+  { key: 'cacheRead', label: 'Cache read', color: '#5eead4', rate: '0.1×' },
+  { key: 'freshInput', label: 'Fresh input', color: '#06b6d4', rate: '1×' },
+  { key: 'cacheWrite', label: 'Cache write', color: '#fbbf24', rate: '1.25–2×' }
+];
+
+const OUTPUT_SERIES: Series = { key: 'output', label: 'Output', color: '#8b5cf6', rate: '5×' };
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -30,26 +49,24 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function RequestTooltip({ active, payload }: any) {
+function RequestTooltip({ active, payload, hidden }: any) {
   if (!active || !payload?.length) return null;
   const p: Point = payload[0].payload;
 
-  const rows: [string, number, string][] = [
-    ['Cache read', p.cacheRead, COLOR_CACHE_READ],
-    ['Fresh input', p.freshInput, COLOR_INPUT],
-    ['Cache write', p.cacheWrite, COLOR_CACHE_WRITE],
-    ['Output', p.output, COLOR_OUTPUT]
-  ];
+  const visible = [...PROMPT_SERIES, OUTPUT_SERIES].filter(s => !hidden.has(s.key));
+  const promptTotal = PROMPT_SERIES
+    .filter(s => !hidden.has(s.key))
+    .reduce((sum, s) => sum + p[s.key], 0);
 
   return (
     <div className="request-weight-tooltip">
       <div className="request-weight-tooltip-title">Step #{p.index}</div>
-      <div className="request-weight-tooltip-total">{p.prompt.toLocaleString()} tokens in prompt</div>
-      {rows.map(([label, value, color]) => (
-        <div className="request-weight-tooltip-row" key={label}>
-          <span className="token-dot" style={{ background: color }} />
-          <span>{label}</span>
-          <strong>{value.toLocaleString()}</strong>
+      <div className="request-weight-tooltip-total">{promptTotal.toLocaleString()} tokens in prompt</div>
+      {visible.map(s => (
+        <div className="request-weight-tooltip-row" key={s.key}>
+          <span className="token-dot" style={{ background: s.color }} />
+          <span>{s.label}</span>
+          <strong>{p[s.key].toLocaleString()}</strong>
         </div>
       ))}
     </div>
@@ -64,6 +81,23 @@ function RequestTooltip({ active, payload }: any) {
  * show.
  */
 export default function RequestWeight({ steps, compactionPoints, onGoToStep }: Props) {
+  // Hidden series are not rendered at all rather than passed `hide`, so recharts
+  // drops them from the axis domain and the remaining ones rescale to fill the
+  // chart — the point of toggling cache off is to finally see the rest.
+  const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set());
+
+  const toggle = (key: SeriesKey) => {
+    setHidden(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   const data = useMemo<Point[]>(() => {
     const entries: Point[] = [];
 
@@ -74,9 +108,11 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
       const cacheRead = step.usage.cache_read_input_tokens ?? 0;
       const freshInput = step.usage.input_tokens ?? 0;
       const cacheWrite = step.usage.cache_creation_input_tokens ?? 0;
+      const key = stepKey(step);
       entries.push({
-        index: step.index,
-        step: `#${step.index}`,
+        index: key,
+        localIndex: step.index,
+        step: `#${key}`,
         cacheRead,
         freshInput,
         cacheWrite,
@@ -92,11 +128,34 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
   }
 
   const compactionSet = new Set(compactionPoints ?? []);
+  const visiblePrompt = PROMPT_SERIES.filter(s => !hidden.has(s.key));
+  const outputVisible = !hidden.has('output');
 
+  // recharts 3 dropped `activePayload` from the chart mouse-event object — it
+  // hands over the active tick's position only (`MouseHandlerDataParam`), so
+  // the datum is looked up by index instead. Chart-level rather than per-dot:
+  // the whole plot area is then clickable, dots included.
   const handleClick = (state: any) => {
-    const point: Point | undefined = state?.activePayload?.[0]?.payload;
+    const idx = state?.activeTooltipIndex ?? state?.activeIndex;
+    if (typeof idx !== 'number') return;
+    const point = data[idx];
     if (point) onGoToStep?.(point.index);
   };
+
+  const legendItem = (s: Series, suffix?: string) => (
+    <button
+      key={s.key}
+      type="button"
+      className={`token-legend-item token-legend-toggle${hidden.has(s.key) ? ' is-hidden' : ''}`}
+      onClick={() => toggle(s.key)}
+      aria-pressed={!hidden.has(s.key)}
+      title={`${hidden.has(s.key) ? 'Show' : 'Hide'} ${s.label} — billed at ${s.rate} the base input rate`}
+    >
+      <span className="token-dot" style={{ background: s.color }} />
+      {s.label}{suffix}
+      <span className="token-legend-rate">{s.rate}</span>
+    </button>
+  );
 
   return (
     <div className="context-timeline-container">
@@ -111,8 +170,11 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
               stroke="rgba(255,255,255,0.4)"
               style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}
             />
+            {/* Both axes stay mounted even when empty: recharts needs the id a
+                series references to exist, and `hide` keeps the layout stable. */}
             <YAxis
               yAxisId="prompt"
+              hide={visiblePrompt.length === 0}
               tickFormatter={formatTokens}
               stroke="rgba(255,255,255,0.4)"
               style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}
@@ -122,14 +184,17 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
             <YAxis
               yAxisId="output"
               orientation="right"
+              hide={!outputVisible}
               tickFormatter={formatTokens}
-              stroke={COLOR_OUTPUT}
+              stroke={OUTPUT_SERIES.color}
               style={{ fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}
             />
-            <Tooltip content={<RequestTooltip />} />
+            <Tooltip content={<RequestTooltip hidden={hidden} />} />
 
+            {/* Matched on the local index: the analyzer numbers findings within
+                the main session, not by `globalIndex`. */}
             {data.map((d) =>
-              compactionSet.has(d.index) ? (
+              compactionSet.has(d.localIndex) ? (
                 <ReferenceLine
                   key={`comp-${d.index}`}
                   yAxisId="prompt"
@@ -142,61 +207,46 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
               ) : null
             )}
 
-            <Area
-              yAxisId="prompt"
-              type="monotone"
-              dataKey="cacheRead"
-              stackId="prompt"
-              stroke={COLOR_CACHE_READ}
-              fill={COLOR_CACHE_READ}
-              fillOpacity={0.35}
-              strokeWidth={1.5}
-              name="Cache read"
-            />
-            <Area
-              yAxisId="prompt"
-              type="monotone"
-              dataKey="freshInput"
-              stackId="prompt"
-              stroke={COLOR_INPUT}
-              fill={COLOR_INPUT}
-              fillOpacity={0.45}
-              strokeWidth={1.5}
-              name="Fresh input"
-            />
-            <Area
-              yAxisId="prompt"
-              type="monotone"
-              dataKey="cacheWrite"
-              stackId="prompt"
-              stroke={COLOR_CACHE_WRITE}
-              fill={COLOR_CACHE_WRITE}
-              fillOpacity={0.45}
-              strokeWidth={1.5}
-              name="Cache write"
-            />
-            <Line
-              yAxisId="output"
-              type="monotone"
-              dataKey="output"
-              stroke={COLOR_OUTPUT}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 5 }}
-              name="Output"
-            />
+            {visiblePrompt.map(s => (
+              <Area
+                key={s.key}
+                yAxisId="prompt"
+                type="monotone"
+                dataKey={s.key}
+                stackId="prompt"
+                stroke={s.color}
+                fill={s.color}
+                fillOpacity={0.4}
+                strokeWidth={1.5}
+                name={s.label}
+              />
+            ))}
+
+            {outputVisible && (
+              <Line
+                yAxisId="output"
+                type="monotone"
+                dataKey="output"
+                stroke={OUTPUT_SERIES.color}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 5 }}
+                name={OUTPUT_SERIES.label}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
       <div className="token-legend">
-        <span className="token-legend-item"><span className="token-dot" style={{ background: COLOR_CACHE_READ }} />Cache read</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: COLOR_INPUT }} />Fresh input</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: COLOR_CACHE_WRITE }} />Cache write</span>
-        <span className="token-legend-item"><span className="token-dot" style={{ background: COLOR_OUTPUT }} />Output (right axis)</span>
+        {PROMPT_SERIES.map(s => legendItem(s))}
+        {legendItem(OUTPUT_SERIES, ' (right axis)')}
         {(compactionPoints?.length ?? 0) > 0 && (
           <span className="token-legend-item"><span className="token-dot" style={{ background: '#f87171' }} />Compactions</span>
         )}
+      </div>
+      <div className="token-legend-note">
+        Click a series to hide it and rescale the axis. ×N is the billed rate relative to the model's base input rate.
       </div>
     </div>
   );

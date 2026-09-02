@@ -132,6 +132,15 @@ function App() {
   // so a Task keeps the duration of the whole agent it spawned.
   const mainFlatSteps = useMemo(() => flatSteps.filter(step => !step.agentId), [flatSteps]);
 
+  // The same steps as `mainSteps` — so the token maths on the Context tab is
+  // unchanged — but numbered the way the Steps tab numbers them. Its charts
+  // navigate on click, and `session.steps` carries no `globalIndex` to
+  // navigate by.
+  const mainAnalyticSteps = useMemo(
+    () => mainFlatSteps.filter(step => !isSystemStep(step)),
+    [mainFlatSteps]
+  );
+
   // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
   const stepsTabLabel =
     stepsFilteredCount !== null && stepsFilteredCount !== timelineSteps.length
@@ -458,7 +467,7 @@ function App() {
         )}
         {activeTab === 'context' && (
           <ContextTab
-            steps={mainSteps}
+            steps={mainAnalyticSteps}
             analysis={session.analysis}
             onGoToStep={goToStep}
           />

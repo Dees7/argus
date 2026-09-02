@@ -1,4 +1,4 @@
-import { Step, AnalysisResult } from '../types/session';
+import { Step, AnalysisResult, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
 import ContextTimeline from './ContextTimeline';
 import RequestWeight from './RequestWeight';
@@ -122,7 +122,7 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
         <div className="peak-info">
           <div className="peak-stat">
             <span>Highest Step:</span>
-            <code>#{peakStep?.index}</code>
+            <code>#{peakStep ? stepKey(peakStep) : ''}</code>
           </div>
           <div className="peak-stat">
             <span>Total Tokens:</span>

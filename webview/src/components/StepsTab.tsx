@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Step, Subagent, Finding, TokenUsage, spawnKey } from '../types/session';
+import { Step, Subagent, Finding, TokenUsage, spawnKey, stepKey } from '../types/session';
 import { formatModelLabel, modelFamilyKey } from '../../../src/types/modelFamily';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
@@ -389,9 +389,9 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 
 /* ── Main component ── */
 // In a flattened (main + sub-agent) timeline, every step has a unique
-// globalIndex. We fall back to the local index for legacy callers that may
-// hand us un-flattened arrays.
-const keyOf = (step: Step): number => step.globalIndex ?? step.index;
+// globalIndex. Shared with the tabs that navigate here, so the number they
+// send is the number these rows are keyed by.
+const keyOf = stepKey;
 
 const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the

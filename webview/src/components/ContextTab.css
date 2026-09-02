@@ -204,6 +204,44 @@
   flex-shrink: 0;
 }
 
+/* Request Weight legend toggles */
+.token-legend-toggle {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 3px;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: opacity var(--transition), background var(--transition);
+}
+
+.token-legend-toggle:hover {
+  background: var(--bg-panel);
+  color: var(--text-bright);
+}
+
+.token-legend-toggle.is-hidden {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.token-legend-rate {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.token-legend-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 /* Request Weight tooltip */
 .request-weight-tooltip {
   background: var(--bg-elevated);
