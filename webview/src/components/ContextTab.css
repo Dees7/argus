@@ -172,6 +172,10 @@
   padding: 10px;
 }
 
+.context-timeline-chart.is-clickable {
+  cursor: pointer;
+}
+
 .context-timeline-empty {
   padding: 40px;
   text-align: center;

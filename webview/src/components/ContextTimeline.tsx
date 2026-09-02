@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Step, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
+import { useChartStepClick } from '../utils/chartStepClick';
 
 interface Props {
   steps: Step[];
@@ -82,6 +83,9 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
     return entries;
   }, [steps, pressureZones]);
 
+  // Before the early return: hooks must run on every render.
+  const { chartHandlers, wrapperHandlers } = useChartStepClick(data, onGoToStep);
+
   if (data.length < 2) {
     return <div className="context-timeline-empty">Not enough data to display timeline</div>;
   }
@@ -89,23 +93,13 @@ export default function ContextTimeline({ steps, compactionPoints, pressureZones
   const compactionSet = new Set(compactionPoints ?? []);
   const visible = SERIES.filter(s => !hidden.has(s.key));
 
-  // recharts 3 dropped `activePayload` from the chart mouse-event object — it
-  // hands over the active tick's position only, so the datum is looked up by
-  // index. Chart-level rather than per-dot: the whole plot area is clickable.
-  const handleClick = (state: any) => {
-    const idx = state?.activeTooltipIndex ?? state?.activeIndex;
-    if (typeof idx !== 'number') return;
-    const point = data[idx];
-    if (point) onGoToStep?.(point.index);
-  };
-
   return (
     <div className="context-timeline-container">
       <h3 className="section-title">Token Timeline</h3>
       <div className="section-subtitle">Running total for the session — every line only ever climbs</div>
-      <div className="context-timeline-chart">
+      <div className="context-timeline-chart is-clickable" {...wrapperHandlers}>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} onClick={handleClick}>
+          <LineChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} {...chartHandlers}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="step"

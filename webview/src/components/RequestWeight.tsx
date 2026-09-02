@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Step, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
+import { useChartStepClick } from '../utils/chartStepClick';
 
 interface Props {
   steps: Step[];
@@ -123,6 +124,9 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
     return entries;
   }, [steps]);
 
+  // Before the early return: hooks must run on every render.
+  const { chartHandlers, wrapperHandlers } = useChartStepClick(data, onGoToStep);
+
   if (data.length < 2) {
     return null;
   }
@@ -130,17 +134,6 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
   const compactionSet = new Set(compactionPoints ?? []);
   const visiblePrompt = PROMPT_SERIES.filter(s => !hidden.has(s.key));
   const outputVisible = !hidden.has('output');
-
-  // recharts 3 dropped `activePayload` from the chart mouse-event object — it
-  // hands over the active tick's position only (`MouseHandlerDataParam`), so
-  // the datum is looked up by index instead. Chart-level rather than per-dot:
-  // the whole plot area is then clickable, dots included.
-  const handleClick = (state: any) => {
-    const idx = state?.activeTooltipIndex ?? state?.activeIndex;
-    if (typeof idx !== 'number') return;
-    const point = data[idx];
-    if (point) onGoToStep?.(point.index);
-  };
 
   const legendItem = (s: Series, suffix?: string) => (
     <button
@@ -161,9 +154,9 @@ export default function RequestWeight({ steps, compactionPoints, onGoToStep }: P
     <div className="context-timeline-container">
       <h3 className="section-title">Request Weight</h3>
       <div className="section-subtitle">Context sent per API call — how much heavier each next request gets</div>
-      <div className="context-timeline-chart">
+      <div className="context-timeline-chart is-clickable" {...wrapperHandlers}>
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} onClick={handleClick}>
+          <ComposedChart data={data} margin={{ top: 20, right: 10, left: 10, bottom: 20 }} {...chartHandlers}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
             <XAxis
               dataKey="step"
