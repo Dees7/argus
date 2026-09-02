@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Step, Subagent, Finding, TokenUsage, spawnKey } from '../types/session';
+import { formatModelLabel, modelFamilyKey } from '../../../src/types/modelFamily';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
@@ -467,6 +468,34 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
     }
     return m;
   }, [subagents, subagentById]);
+
+  // Model family the main session ran on, from the first step that names one.
+  // Agent rows only carry a model badge when they differ from it — an agent on
+  // the session's own model is the norm and does not need saying.
+  const mainModelKey = useMemo(() => {
+    for (const s of steps) {
+      if (s.agentId || !s.model) continue;
+      const key = modelFamilyKey(s.model);
+      if (key !== 'unknown') return key;
+    }
+    return '';
+  }, [steps]);
+
+  // `Haiku` next to an agent whose transcript was written by a model other than
+  // the session's. `sub.model` is the model that actually answered, read from
+  // the agent's own JSONL, not the alias the Task call asked for.
+  const modelBadge = useCallback(
+    (sub: Subagent) => {
+      const key = modelFamilyKey(sub.model || '');
+      if (key === 'unknown' || key === mainModelKey) return null;
+      return (
+        <span className="step-agent-model" title={`Agent ran on ${sub.model}`}>
+          {formatModelLabel(sub.model)}
+        </span>
+      );
+    },
+    [mainModelKey]
+  );
 
   const toggleAgent = useCallback((agentId: string) => {
     setCollapsedAgents(prev => {
@@ -1105,6 +1134,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                         <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
                           {ownerAgent.agentType || 'agent'}
                         </span>
+                        {modelBadge(ownerAgent)}
                         {/* Transcript of this agent lives in
                           <session>/subagents/agent-<agentId>.jsonl — show the id
                           so a row can be traced back to its own session file. */}
@@ -1121,12 +1151,16 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                         {/* The spawning Task row carries the id(s) of the agent
                           session(s) it started, mirroring the agent rows below. */}
                         {linkedAgents.map(a => (
-                          <span
-                            key={a.agentId}
-                            className="step-agent-id"
-                            title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
-                          >
-                            {a.agentId}
+                          <span key={a.agentId}>
+                            <span
+                              className="step-agent-id"
+                              title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                            >
+                              {a.agentId}
+                            </span>
+                            {/* The spawn row is where a model override is worth
+                              seeing first — it is the call that chose it. */}
+                            {modelBadge(a)}
                           </span>
                         ))}
                         <button

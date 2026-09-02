@@ -427,6 +427,9 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
 
   const prompt: string = asStr(inputObj.prompt);
   const subagentType: string = asStr(inputObj.subagent_type);
+  // The model alias the call asked for (`opus`, `haiku`). Absent means the
+  // agent inherited whatever the session runs on.
+  const requestedModel: string = asStr(inputObj.model);
   const agentId: string = asStr(resultObj.agentId);
   const status: string = asStr(resultObj.status);
   const totalDurationMs = asNum(resultObj.totalDurationMs);
@@ -439,9 +442,14 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
     <div className="tr-block">
       {/* The description is the step header's subtitle now; the agent type is
           the one thing here the header doesn't carry. */}
-      {subagentType && (
+      {(subagentType || requestedModel) && (
         <div className="tr-task-header">
-          <span className="tr-task-type">{subagentType}</span>
+          {subagentType && <span className="tr-task-type">{subagentType}</span>}
+          {requestedModel && (
+            <span className="tr-badge tr-badge-info" title="Model requested for this agent">
+              model: {requestedModel}
+            </span>
+          )}
         </div>
       )}
       {(agentId || status) && (

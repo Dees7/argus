@@ -894,6 +894,19 @@
   background: rgba(212, 167, 44, 0.12);
 }
 
+/* Only rendered when the agent ran on a different model than the session, so
+   it should read as a deviation — outlined, not filled like the type badge. */
+.step-agent-model {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border-radius: 3px;
+  border: 1px solid var(--status-info, #3794ff);
+  color: var(--status-info, #3794ff);
+}
+
 .step-agent-id {
   margin-left: 6px;
   font-family: var(--vscode-editor-font-family, monospace);

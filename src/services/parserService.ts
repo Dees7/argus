@@ -1633,6 +1633,10 @@ export class ParserService {
         let parentAgentId: string | undefined;
         let toolUseId: string | undefined;
         let spawnDepth: number | undefined;
+        // Alias the spawning call asked for (`opus`, `haiku`), not a model id.
+        // Only used when the transcript itself names no model — an agent that
+        // died before its first assistant turn still knows what it was to run.
+        let metaModel: string | undefined;
         const metaPath = path.join(subagentsDir, `agent-${agentId}.meta.json`);
         if (fs.existsSync(metaPath)) {
           try {
@@ -1643,6 +1647,7 @@ export class ParserService {
             parentAgentId = typeof meta.parentAgentId === 'string' ? meta.parentAgentId : undefined;
             toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
             spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
+            metaModel = typeof meta.model === 'string' ? meta.model : undefined;
           } catch {
             // ignore malformed meta
           }
@@ -1651,7 +1656,7 @@ export class ParserService {
         subagents.push({
           agentId,
           prompt,
-          model: session.model,
+          model: session.model || metaModel || '',
           agentType,
           description,
           parentAgentId,
