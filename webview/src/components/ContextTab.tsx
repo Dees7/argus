@@ -1,6 +1,7 @@
 import { Step, AnalysisResult } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
 import ContextTimeline from './ContextTimeline';
+import RequestWeight from './RequestWeight';
 import './ContextTab.css';
 
 interface Props {
@@ -68,6 +69,12 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
         steps={steps}
         compactionPoints={analysis?.contextMetrics?.compactionPoints}
         pressureZones={analysis?.contextMetrics?.contextPressureZones}
+        onGoToStep={onGoToStep}
+      />
+
+      <RequestWeight
+        steps={steps}
+        compactionPoints={analysis?.contextMetrics?.compactionPoints}
         onGoToStep={onGoToStep}
       />
 
