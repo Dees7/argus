@@ -1151,7 +1151,7 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                         {/* The spawning Task row carries the id(s) of the agent
                           session(s) it started, mirroring the agent rows below. */}
                         {linkedAgents.map(a => (
-                          <span key={a.agentId}>
+                          <span key={a.agentId} className="step-agent-ref">
                             <span
                               className="step-agent-id"
                               title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
