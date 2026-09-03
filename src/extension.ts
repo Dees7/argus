@@ -105,6 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
       result = result.filter(s =>
         s.prompt.toLowerCase().includes(q) ||
         (s.aiTitle ?? '').toLowerCase().includes(q) ||
+        (s.customTitle ?? '').toLowerCase().includes(q) ||
         s.project.toLowerCase().includes(q) ||
         s.sessionId.toLowerCase().includes(q) ||
         (contentMatches !== null && contentMatches.has(s.sessionId))

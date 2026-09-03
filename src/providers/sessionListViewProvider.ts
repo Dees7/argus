@@ -1244,8 +1244,9 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         relativeTime(s.lastModified),
       ].filter(Boolean).join(' · ');
       const cls = grouped ? 'session-item grouped' : 'session-item';
-      // Claude Code's own title when it made one, the opening prompt otherwise.
-      const label = s.aiTitle || s.prompt || 'Untitled Session';
+      // The name the user gave the session first, Claude Code's own title when
+      // it made one, the opening prompt otherwise.
+      const label = s.customTitle || s.aiTitle || s.prompt || 'Untitled Session';
       const tooltip = s.prompt || label;
       return '<div class="' + cls + '" tabindex="0" data-id="' + s.sessionId + '"'
         + ' title="' + escapeHtml(tooltip) + '">'

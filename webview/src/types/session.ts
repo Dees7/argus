@@ -6,6 +6,11 @@ export interface SessionDetail {
    * titled, where `prompt` is all we have.
    */
   aiTitle?: string;
+  /**
+   * Title the user renamed the session to in Claude Code. Wins over `aiTitle`:
+   * a name a person chose beats a name a model guessed.
+   */
+  customTitle?: string;
   project: string;
   model: string;
   startTime: Date;

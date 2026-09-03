@@ -18,6 +18,8 @@ export interface DiscoveredSession {
   prompt: string;
   /** Title Claude Code generated for the session, '' when it never did. */
   aiTitle: string;
+  /** Title the user renamed the session to, '' when they never did. */
+  customTitle: string;
   timestamp: Date;
   lastModified: Date;
   source: 'history' | 'scan';
@@ -170,6 +172,7 @@ export class DiscoveryService {
         sessionId: ds.sessionId,
         prompt: ds.prompt,
         aiTitle: ds.aiTitle || undefined,
+        customTitle: ds.customTitle || undefined,
         project: ds.project,
         projectPath: ds.projectPath,
         model: ds.model,
@@ -427,6 +430,7 @@ export class DiscoveryService {
       model: metadata.model || 'unknown',
       prompt: '',
       aiTitle: metadata.aiTitle,
+      customTitle: metadata.customTitle,
       timestamp: new Date(),
       lastModified: new Date(),
       source: 'scan',

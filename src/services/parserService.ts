@@ -362,6 +362,12 @@ interface QuickMetadata {
    * line. Empty when the session never got one.
    */
   aiTitle: string;
+  /**
+   * Title the user typed over the generated one, written as a
+   * `{"type":"custom-title"}` line. Empty when the session was never renamed,
+   * or when a later rename cleared the name again.
+   */
+  customTitle: string;
 }
 
 export class ParserService {
@@ -411,6 +417,7 @@ export class ParserService {
       let prompt = '';
       let cwd = '';
       let aiTitle = '';
+      let customTitle = '';
       let foundFirst = false;
       let lines = 0;
 
@@ -452,6 +459,12 @@ export class ParserService {
             aiTitle = base.aiTitle.trim();
           }
 
+          // A rename is appended when it happens, so the last one in the file
+          // wins — including one that cleared the name back to empty.
+          if (base.type === 'custom-title' && typeof base.customTitle === 'string') {
+            customTitle = base.customTitle.trim();
+          }
+
           // Extract prompt from user events
           if (!prompt && base.type === 'user') {
             prompt = this.extractPromptFromEvent(base);
@@ -472,8 +485,8 @@ export class ParserService {
         return null;
       }
 
-      // The title seen in the head can be a draft that a later line replaces.
-      const finalTitle = await this.readTailAiTitle(filePath);
+      // The titles seen in the head can be drafts that later lines replace.
+      const tail = await this.readTailTitles(filePath);
 
       return {
         model,
@@ -481,7 +494,11 @@ export class ParserService {
         lastTimestamp,
         prompt,
         cwd,
-        aiTitle: finalTitle || aiTitle,
+        aiTitle: tail.aiTitle || aiTitle,
+        // A rename the tail saw wins outright, even when it cleared the name:
+        // falling back to an older one would resurrect a title the user
+        // deleted.
+        customTitle: tail.customTitle ?? customTitle,
       };
     } catch (err) {
       console.error('Error reading metadata from', filePath, err);
@@ -490,12 +507,19 @@ export class ParserService {
   }
 
   /**
-   * Last `ai-title` written in the tail window of a transcript, or '' when the
-   * window holds none. Reading the tail rather than the whole file keeps
-   * discovery off multi-megabyte transcripts; the caller falls back to the
-   * title from the head when this comes back empty.
+   * Last `ai-title` and last `custom-title` written in the tail window of a
+   * transcript. Reading the tail rather than the whole file keeps discovery off
+   * multi-megabyte transcripts; the caller falls back to the titles from the
+   * head for whatever the window did not hold — `''` for the generated title,
+   * `null` for the custom one, which has to tell "never renamed" apart from
+   * "renamed to nothing".
    */
-  private async readTailAiTitle(filePath: string): Promise<string> {
+  private async readTailTitles(
+    filePath: string
+  ): Promise<{ aiTitle: string; customTitle: string | null }> {
+    let aiTitle = '';
+    let customTitle: string | null = null;
+
     try {
       const { size } = await fs.promises.stat(filePath);
       const start = Math.max(0, size - TAIL_SCAN_BYTES);
@@ -514,13 +538,23 @@ export class ParserService {
 
       for (let i = lines.length - 1; i >= first; i--) {
         const line = lines[i];
-        if (!line.includes('"ai-title"')) {
+        if (!line.includes('"ai-title"') && !line.includes('"custom-title"')) {
           continue;
         }
         try {
           const event: any = JSON.parse(line);
-          if (event.type === 'ai-title' && typeof event.aiTitle === 'string') {
-            return event.aiTitle.trim();
+          if (!aiTitle && event.type === 'ai-title' && typeof event.aiTitle === 'string') {
+            aiTitle = event.aiTitle.trim();
+          }
+          if (
+            customTitle === null &&
+            event.type === 'custom-title' &&
+            typeof event.customTitle === 'string'
+          ) {
+            customTitle = event.customTitle.trim();
+          }
+          if (aiTitle && customTitle !== null) {
+            break;
           }
         } catch {
           continue;
@@ -530,7 +564,7 @@ export class ParserService {
       // Unreadable file: the head pass already reported what it could.
     }
 
-    return '';
+    return { aiTitle, customTitle };
   }
 
   /**

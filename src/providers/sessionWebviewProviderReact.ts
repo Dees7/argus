@@ -80,7 +80,7 @@ export class SessionWebviewProviderReact {
     // Create webview panel
     const panel = vscode.window.createWebviewPanel(
       'argusSession',
-      `${(sessionData.aiTitle || sessionData.prompt).substring(0, 30)}...`,
+      `${(sessionData.customTitle || sessionData.aiTitle || sessionData.prompt).substring(0, 30)}...`,
       this.getViewColumn(),
       {
         enableScripts: true,
@@ -664,6 +664,7 @@ export class SessionWebviewProviderReact {
       console.log('🔨 Building session...');
       const session = this.parserService.buildSession(events, sessionId, prompt, project);
       session.aiTitle = metadata?.aiTitle || undefined;
+      session.customTitle = metadata?.customTitle || undefined;
       console.log('✅ Session built:', session.steps.length, 'steps');
 
       // Parse subagents

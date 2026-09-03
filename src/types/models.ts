@@ -56,6 +56,11 @@ export interface SessionSummary {
    * titled — VSCode/SDK entrypoints among them — where `prompt` is all we have.
    */
   aiTitle?: string;
+  /**
+   * Title the user renamed the session to in Claude Code. Takes precedence over
+   * `aiTitle`: it is the name a person chose, over a name a model guessed.
+   */
+  customTitle?: string;
   project: string;
   /**
    * Absolute working directory the session ran in, when it can be recovered
@@ -83,6 +88,8 @@ export interface SessionDetail {
   prompt: string;
   /** See `SessionSummary.aiTitle`. */
   aiTitle?: string;
+  /** See `SessionSummary.customTitle`. */
+  customTitle?: string;
   project: string;
   model: string;
   startTime: Date;
