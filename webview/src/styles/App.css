@@ -152,6 +152,17 @@
   color: var(--text-bright);
 }
 
+/* Archived in Claude Code — a state of the session, not a fact about the run,
+   so it sits back from the model badge next to it. */
+.meta-badge.archived {
+  background: none;
+  border-style: dashed;
+  color: var(--text-dim);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .meta-dim {
   color: var(--text-dim);
 }

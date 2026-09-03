@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ArchivedSessionsService } from './services/archivedSessionsService';
 import { DiscoveryService } from './services/discoveryService';
 import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
@@ -20,7 +21,17 @@ import { getClaudeConfigDir } from './utils/claudePaths';
 
 export function activate(context: vscode.ExtensionContext) {
   // Initialize services
-  const discoveryService = new DiscoveryService();
+  //
+  // Claude Code keeps its archived-session ids in the same VS Code state
+  // database as every other extension's global state, one directory up from
+  // ours — deriving the path from `globalStorageUri` keeps it right for
+  // Insiders, other VS Code forks and remote hosts alike.
+  const archivedSessions = new ArchivedSessionsService(
+    context.globalStorageUri
+      ? path.join(path.dirname(context.globalStorageUri.fsPath), 'state.vscdb')
+      : undefined
+  );
+  const discoveryService = new DiscoveryService(archivedSessions);
   const parserService = new ParserService();
   const analyzerService = new AnalyzerService();
   const searchService = new SearchService();
@@ -30,7 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
     context,
     discoveryService,
     parserService,
-    analyzerService
+    analyzerService,
+    archivedSessions
   );
 
   // Filter state. The "current project only" toggle and the grouping mode are
@@ -567,9 +579,21 @@ export function activate(context: vscode.ExtensionContext) {
       refreshList();
     }
   }, 30 * 1000);
+
+  // Archiving happens in Claude Code's extension, which sends us nothing when
+  // it does. Poll its state instead; the read is a stat until the file's mtime
+  // moves, and the list is only re-rendered when the archived set really
+  // changed.
+  const archiveTicker = setInterval(() => {
+    if (archivedSessions.refresh()) {
+      allSessions = discoveryService.getSessionSummaries();
+      refreshList();
+    }
+  }, 10 * 1000);
   context.subscriptions.push({
     dispose: () => {
       clearInterval(liveTicker);
+      clearInterval(archiveTicker);
       if (sessionRefreshTimer) {
         clearTimeout(sessionRefreshTimer);
       }

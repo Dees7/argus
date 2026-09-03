@@ -71,6 +71,11 @@ export interface SessionSummary {
   timestamp: Date;
   lastModified: Date;
   isActive: boolean;
+  /**
+   * The user archived this session in Claude Code. Argus still lists it — the
+   * flag only changes how the entry is marked.
+   */
+  isArchived?: boolean;
 }
 
 export interface DashboardStats {
@@ -90,6 +95,8 @@ export interface SessionDetail {
   aiTitle?: string;
   /** See `SessionSummary.customTitle`. */
   customTitle?: string;
+  /** See `SessionSummary.isArchived`. */
+  isArchived?: boolean;
   project: string;
   model: string;
   startTime: Date;

@@ -36,7 +36,8 @@ export class SessionWebviewProviderReact {
     private context: vscode.ExtensionContext,
     private discoveryService: DiscoveryService,
     private parserService: ParserService,
-    private analyzerService: AnalyzerService
+    private analyzerService: AnalyzerService,
+    private archivedSessions?: { isArchived(sessionId: string): boolean }
   ) {
     // Push settings.json edits into already-open sessions; otherwise a changed
     // autoExpand/sort default only takes effect on the next panel.
@@ -665,6 +666,7 @@ export class SessionWebviewProviderReact {
       const session = this.parserService.buildSession(events, sessionId, prompt, project);
       session.aiTitle = metadata?.aiTitle || undefined;
       session.customTitle = metadata?.customTitle || undefined;
+      session.isArchived = this.archivedSessions?.isArchived(sessionId) ?? false;
       console.log('✅ Session built:', session.steps.length, 'steps');
 
       // Parse subagents

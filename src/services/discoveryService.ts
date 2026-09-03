@@ -51,8 +51,15 @@ export class DiscoveryService {
   private lastDiscovery: Date = new Date(0);
   private parserService: ParserService;
 
-  constructor() {
+  /**
+   * Whether Claude Code has a session archived. Optional: discovery works
+   * without it, sessions then simply carry no archived mark.
+   */
+  private archived?: { isArchived(sessionId: string): boolean };
+
+  constructor(archived?: { isArchived(sessionId: string): boolean }) {
     this.parserService = new ParserService();
+    this.archived = archived;
   }
 
   /**
@@ -179,6 +186,7 @@ export class DiscoveryService {
         timestamp: ds.timestamp,
         lastModified: ds.lastModified,
         isActive: this.isSessionActive(ds, now),
+        isArchived: this.archived?.isArchived(ds.sessionId) ?? false,
       });
     }
 

@@ -11,6 +11,11 @@ export interface SessionDetail {
    * a name a person chose beats a name a model guessed.
    */
   customTitle?: string;
+  /**
+   * The user archived this session in Claude Code. Argus shows it either way;
+   * the header just says so.
+   */
+  isArchived?: boolean;
   project: string;
   model: string;
   startTime: Date;

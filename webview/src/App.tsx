@@ -251,6 +251,11 @@ function App() {
         <div className="detail-meta">
           <span>{session.project}</span>
           <span className="meta-badge">{formatModel(session.model)}</span>
+          {session.isArchived && (
+            <span className="meta-badge archived" title="Archived in Claude Code">
+              Archived
+            </span>
+          )}
           <span>{formatDuration(session.durationMs)}</span>
           <span className="meta-dim">
             {timelineSteps.length} steps

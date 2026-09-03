@@ -134,6 +134,9 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const sessionIconUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(this._extensionPath, 'resources', 'session.svg'))
     );
+    const archivedIconUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(this._extensionPath, 'resources', 'archived.svg'))
+    );
     const showModelSelector = vscode.workspace
       .getConfiguration('argus')
       .get<boolean>('searchBar.showModelSelector', true);
@@ -781,6 +784,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     const listEl = document.getElementById('list');
     const LIVE_ICON = '${liveIconUri}';
     const SESSION_ICON = '${sessionIconUri}';
+    const ARCHIVED_ICON = '${archivedIconUri}';
     const CHECK_ICON = '<svg class="dropdown-item-check" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/></svg>';
 
     // Custom dropdown
@@ -1237,7 +1241,9 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     }
 
     function renderSessionItem(s, grouped) {
-      const icon = s.isActive ? LIVE_ICON : SESSION_ICON;
+      // Liveness wins over the archived mark: a session being written to right
+      // now is the more urgent thing to say about it.
+      const icon = s.isActive ? LIVE_ICON : (s.isArchived ? ARCHIVED_ICON : SESSION_ICON);
       const desc = [
         showModel ? s.modelLabel : '',
         showProject ? shortProject(s.project) : '',
@@ -1247,7 +1253,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       // The name the user gave the session first, Claude Code's own title when
       // it made one, the opening prompt otherwise.
       const label = s.customTitle || s.aiTitle || s.prompt || 'Untitled Session';
-      const tooltip = s.prompt || label;
+      const base = s.prompt || label;
+      const tooltip = s.isArchived && !s.isActive
+        ? 'Archived in Claude Code\\n' + base
+        : base;
       return '<div class="' + cls + '" tabindex="0" data-id="' + s.sessionId + '"'
         + ' title="' + escapeHtml(tooltip) + '">'
         + '<img class="session-icon" src="' + icon + '">'
