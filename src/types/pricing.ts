@@ -34,6 +34,8 @@ export const CACHE_WRITE_5M_RATIO = 1.25;
 export const CACHE_WRITE_1H_RATIO = 2.0;
 
 export const MODEL_PRICES: Record<string, ModelPricing> = {
+  'claude-fable-5-1': { inputPerMillion: 10.0, outputPerMillion: 50.0 },
+  'claude-mythos-5-1': { inputPerMillion: 10.0, outputPerMillion: 50.0 },
   'claude-fable-5': { inputPerMillion: 10.0, outputPerMillion: 50.0 },
   'claude-mythos-5': { inputPerMillion: 10.0, outputPerMillion: 50.0 },
   'claude-opus-5': {
@@ -61,6 +63,7 @@ export const MODEL_PRICES: Record<string, ModelPricing> = {
 // the cheapest current member of the family, so a new model is never billed as
 // something from a different tier.
 const FAMILY_FALLBACKS: Array<{ match: RegExp; pricing: ModelPricing }> = [
+  { match: /fable|mythos/i, pricing: { inputPerMillion: 10.0, outputPerMillion: 50.0 } },
   { match: /opus/i, pricing: { inputPerMillion: 5.0, outputPerMillion: 25.0 } },
   { match: /sonnet/i, pricing: { inputPerMillion: 2.0, outputPerMillion: 10.0 } },
   { match: /haiku/i, pricing: { inputPerMillion: 1.0, outputPerMillion: 5.0 } },
