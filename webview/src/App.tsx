@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { SessionDetail, flattenSessionSteps, isSystemStep } from './types/session';
 import { SYSTEM_STEP_TOGGLES, systemToggleOf } from './components/systemSteps';
 import { formatModelLabel } from '../../src/types/modelFamily';
+import { formatEffortLabel } from '../../src/types/effort';
 import StepsTab from './components/StepsTab';
 import AnalysisTab from './components/AnalysisTab';
 import CostTab from './components/CostTab';
@@ -251,6 +252,11 @@ function App() {
         <div className="detail-meta">
           <span>{session.project}</span>
           <span className="meta-badge">{formatModel(session.model)}</span>
+          {session.effort && (
+            <span className="meta-badge meta-badge-effort" title={`Reasoning effort: ${session.effort}`}>
+              {formatEffortLabel(session.effort)}
+            </span>
+          )}
           {session.isArchived && (
             <span className="meta-badge archived" title="Archived in Claude Code">
               Archived
@@ -431,6 +437,7 @@ function App() {
             steps={timelineSteps}
             allSteps={flatSteps}
             subagents={session.subagents}
+            mainEffort={session.effort}
             findings={session.analysis?.findings || []}
             highlightStep={highlightStep}
             defaultSortMode={stepsSortOrder}

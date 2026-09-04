@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Step, Subagent, Finding, TokenUsage, spawnKey, stepKey } from '../types/session';
 import { formatModelLabel, modelFamilyKey } from '../../../src/types/modelFamily';
+import { formatEffortLabel } from '../../../src/types/effort';
 import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
@@ -20,6 +21,9 @@ interface Props {
   // fall back to measuring what they render.
   allSteps?: Step[];
   subagents: Subagent[];
+  // Reasoning effort the main session ran at. Agent rows only carry an effort
+  // badge when theirs differs — see `effortBadge`.
+  mainEffort?: string;
   findings: Finding[];
   highlightStep: number | null;
   // Sort order from settings (argus.steps.sortOrder); also what "Clear
@@ -393,7 +397,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // send is the number these rows are keyed by.
 const keyOf = stepKey;
 
-const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -495,6 +499,21 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
       );
     },
     [mainModelKey]
+  );
+
+  // Same idea as `modelBadge`, for reasoning effort: only worth a badge when
+  // the agent's own transcript ran at an effort other than the session's.
+  const effortBadge = useCallback(
+    (sub: Subagent) => {
+      const effort = (sub.effort || '').toLowerCase().trim();
+      if (!effort || effort === (mainEffort || '').toLowerCase().trim()) return null;
+      return (
+        <span className="step-agent-effort" title={`Agent ran at ${sub.effort} effort`}>
+          {formatEffortLabel(sub.effort || '')}
+        </span>
+      );
+    },
+    [mainEffort]
   );
 
   const toggleAgent = useCallback((agentId: string) => {
@@ -1134,7 +1153,9 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                         <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
                           {ownerAgent.agentType || 'agent'}
                         </span>
-                        {modelBadge(ownerAgent)}
+                        {/* Model/effort are shown once, on the spawn row below —
+                          repeating them on every one of the agent's own steps
+                          would just be noise. */}
                         {/* Transcript of this agent lives in
                           <session>/subagents/agent-<agentId>.jsonl — show the id
                           so a row can be traced back to its own session file. */}
@@ -1158,9 +1179,10 @@ const StepsTab = ({ steps, allSteps, subagents, findings, highlightStep, default
                             >
                               {a.agentId}
                             </span>
-                            {/* The spawn row is where a model override is worth
-                              seeing first — it is the call that chose it. */}
+                            {/* The spawn row is where a model/effort override is
+                              worth seeing first — it is the call that chose it. */}
                             {modelBadge(a)}
+                            {effortBadge(a)}
                           </span>
                         ))}
                         <button

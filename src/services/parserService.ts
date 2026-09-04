@@ -628,6 +628,7 @@ export class ParserService {
     const toolsUsed = new Map<string, number>();
 
     let model = '';
+    let effort = '';
     let startTime = new Date();
     let endTime = new Date();
     let totalCost = 0;
@@ -665,6 +666,12 @@ export class ParserService {
       // model — a session can switch models mid-way.
       if (!model && event.message?.model && event.message.model !== '<synthetic>') {
         model = event.message.model;
+      }
+
+      // Session-level reasoning effort, same rule as model: first request that
+      // names one wins, for display only.
+      if (!effort && typeof event.effort === 'string' && event.effort) {
+        effort = event.effort;
       }
 
       // Extract timestamps
@@ -1098,6 +1105,7 @@ export class ParserService {
       prompt,
       project,
       model,
+      effort,
       startTime,
       endTime,
       durationMs,
@@ -1691,6 +1699,7 @@ export class ParserService {
           agentId,
           prompt,
           model: session.model || metaModel || '',
+          effort: session.effort,
           agentType,
           description,
           parentAgentId,

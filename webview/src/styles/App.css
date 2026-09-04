@@ -152,6 +152,14 @@
   color: var(--text-bright);
 }
 
+/* Outlined rather than filled, so it reads as a modifier on the model badge
+   next to it rather than a second fact of equal weight. */
+.meta-badge-effort {
+  background: none;
+  border-color: var(--chart-3, #C586C0);
+  color: var(--chart-3, #C586C0);
+}
+
 /* Archived in Claude Code — a state of the session, not a fact about the run,
    so it sits back from the model badge next to it. */
 .meta-badge.archived {

@@ -914,6 +914,21 @@
   flex-shrink: 0;
 }
 
+/* Same treatment as .step-agent-model, distinct hue — model and effort are
+   independent overrides and can both be showing at once. */
+.step-agent-effort {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border-radius: 3px;
+  border: 1px solid var(--chart-3, #C586C0);
+  color: var(--chart-3, #C586C0);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .step-agent-id {
   margin-left: 6px;
   font-family: var(--vscode-editor-font-family, monospace);

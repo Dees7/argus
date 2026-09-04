@@ -18,6 +18,8 @@ export interface SessionDetail {
   isArchived?: boolean;
   project: string;
   model: string;
+  /** Reasoning effort the first request named (`high`, `xhigh`, …), if any. */
+  effort?: string;
   startTime: Date;
   endTime: Date;
   durationMs: number;
@@ -118,6 +120,11 @@ export interface Subagent {
   agentId: string;
   prompt: string;
   model: string;
+  /**
+   * Reasoning effort the agent's own transcript ran at. Only worth a badge
+   * when it differs from the main session's.
+   */
+  effort?: string;
   agentType?: string;
   description?: string;
   // Undefined for agents launched from the main session; otherwise

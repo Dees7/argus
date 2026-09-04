@@ -19,6 +19,12 @@ export interface RawEvent {
   requestId?: string;
   isApiErrorMessage?: boolean;
   /**
+   * Reasoning-effort the request actually ran at (`high`, `xhigh`, …), on the
+   * event itself rather than inside `message` — set by the harness, not the
+   * model. Absent on transcripts written before per-request effort existed.
+   */
+  effort?: string;
+  /**
    * What a request failed with, on a `system`/`api_error` event. A string on
    * assistant events that carry one.
    */
