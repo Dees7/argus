@@ -1,6 +1,9 @@
-import { Step, AnalysisResult } from '../types/session';
+import { useMemo, useState } from 'react';
+import { Step, AnalysisResult, Subagent } from '../types/session';
 import { calculateCostBreakdown } from '../../../src/types/pricing';
 import { oncePerResponse } from '../../../src/types/usage';
+import { filterStepsByAgent, TOTAL_FILTER, AgentFilter, MAIN_FILTER } from '../utils/agentFilter';
+import AgentFilterBar from './AgentFilterBar';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,71 +16,96 @@ import './CostTab.css';
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface Props {
+  /** Main session and every sub-agent, flattened — see `flattenSessionSteps`. */
   steps: Step[];
+  subagents: Subagent[];
   analysis?: AnalysisResult;
-  sessionTotalCost: number;
   onGoToStep: (index: number) => void;
 }
 
-const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
-  const totalCost = analysis?.totalCost ?? sessionTotalCost;
+// Heuristic used only where a proper analysis (rule-based findings) isn't
+// available for the steps in view — duplicate reads and failed calls.
+function estimateWastedCost(steps: Step[]): number {
+  let wasted = 0;
+  const fileReads = new Map<string, { cost: number; count: number }>();
 
-  // Calculate wasted cost if not in analysis
-  let calculatedWastedCost = 0;
-  if (analysis?.wastedCost) {
-    calculatedWastedCost = analysis.wastedCost;
-  } else {
-    // Calculate wasted cost from duplicate reads and failed steps
-    const fileReads = new Map<string, { cost: number; count: number }>();
-
-    steps.forEach(step => {
-      // Track duplicate file reads
-      if (step.toolName === 'Read' && step.toolInput?.file_path) {
-        const path = step.toolInput.file_path;
-        if (!fileReads.has(path)) {
-          fileReads.set(path, { cost: step.cost, count: 1 });
-        } else {
-          const data = fileReads.get(path)!;
-          data.cost += step.cost;
-          data.count += 1;
-        }
+  steps.forEach(step => {
+    if (step.toolName === 'Read' && step.toolInput?.file_path) {
+      const path = step.toolInput.file_path;
+      if (!fileReads.has(path)) {
+        fileReads.set(path, { cost: step.cost, count: 1 });
+      } else {
+        const data = fileReads.get(path)!;
+        data.cost += step.cost;
+        data.count += 1;
       }
+    }
 
-      // Track failed steps
-      if (step.toolResult && typeof step.toolResult === 'string') {
-        if (step.toolResult.includes('Error:') || step.toolResult.includes('Failed:') ||
-            step.toolResult.includes('error:') || step.toolResult.includes('failed:')) {
-          calculatedWastedCost += step.cost;
-        }
+    if (step.toolResult && typeof step.toolResult === 'string') {
+      if (step.toolResult.includes('Error:') || step.toolResult.includes('Failed:') ||
+          step.toolResult.includes('error:') || step.toolResult.includes('failed:')) {
+        wasted += step.cost;
       }
-    });
+    }
+  });
 
-    // Add cost of duplicate reads (keep first read, count rest as wasted)
-    fileReads.forEach(data => {
-      if (data.count > 1) {
-        // Assume uniform cost per read, waste all but first
-        const costPerRead = data.cost / data.count;
-        calculatedWastedCost += costPerRead * (data.count - 1);
-      }
-    });
-  }
+  fileReads.forEach(data => {
+    if (data.count > 1) {
+      const costPerRead = data.cost / data.count;
+      wasted += costPerRead * (data.count - 1);
+    }
+  });
 
-  const wastedCost = calculatedWastedCost;
-  const efficiency = analysis?.efficiency ?? (totalCost > 0 ? ((totalCost - wastedCost) / totalCost) * 100 : 100);
+  return wasted;
+}
+
+const CostTab = ({ steps, subagents, analysis, onGoToStep }: Props) => {
+  const [filter, setFilter] = useState<AgentFilter>(TOTAL_FILTER);
+
+  const filteredSteps = useMemo(() => filterStepsByAgent(steps, filter), [steps, filter]);
+
+  // Cost card: always the plain sum of what's in view. `step.cost` is charged
+  // once per API response, so this is correct for any filter — main, one
+  // agent, or everything — without leaning on `analysis.totalCost`, which only
+  // ever covered the main session.
+  const totalCost = filteredSteps.reduce((sum, s) => sum + (s.cost || 0), 0);
+
+  // Wasted cost: prefer each scope's own rule-based analysis over the
+  // duplicate-read/failed-step heuristic, falling back to it only where an
+  // analysis is missing. For "total" the main and every agent's figures are
+  // summed — there's no single combined analysis to read it from.
+  const wastedCost = useMemo(() => {
+    const mainSteps = filterStepsByAgent(steps, MAIN_FILTER);
+    if (filter === MAIN_FILTER) {
+      return analysis?.wastedCost ?? estimateWastedCost(mainSteps);
+    }
+    if (filter === TOTAL_FILTER) {
+      const mainWasted = analysis?.wastedCost ?? estimateWastedCost(mainSteps);
+      const agentsWasted = subagents.reduce(
+        (sum, sub) => sum + (sub.analysis?.wastedCost ?? estimateWastedCost(sub.steps)),
+        0
+      );
+      return mainWasted + agentsWasted;
+    }
+    const sub = subagents.find(s => s.agentId === filter);
+    return sub ? sub.analysis?.wastedCost ?? estimateWastedCost(sub.steps) : 0;
+  }, [steps, subagents, filter, analysis]);
+
+  const efficiency = totalCost > 0 ? ((totalCost - wastedCost) / totalCost) * 100 : 100;
 
   // Cost by step type. `step.cost` is already priced per model by the parser
   // and charged once per API response, so it is summed as-is — recomputing it
   // here from `usage` would both re-guess the model and double-count the
   // siblings of a multi-block message.
   const costByType: Record<string, { count: number; cost: number; steps: number[] }> = {};
-  steps.forEach(step => {
+  filteredSteps.forEach(step => {
     const key = step.toolName || step.type;
     if (!costByType[key]) {
       costByType[key] = { count: 0, cost: 0, steps: [] };
     }
     costByType[key].count++;
     costByType[key].cost += step.cost || 0;
-    costByType[key].steps.push(step.index);
+    costByType[key].steps.push(step.globalIndex ?? step.index);
   });
 
   const sortedTypes = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
@@ -86,7 +114,7 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
   // Token cost breakdown. Usage repeats across every step of one response, so
   // each message is counted once — the same rule the parser applies to cost.
   let inputCost = 0, outputCost = 0, cacheReadCost = 0, cacheCreateCost = 0;
-  oncePerResponse(steps).forEach(step => {
+  oncePerResponse(filteredSteps).forEach(step => {
     const b = calculateCostBreakdown(step.usage, step.model ?? '');
     inputCost += b.input;
     outputCost += b.output;
@@ -94,7 +122,7 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
     cacheCreateCost += b.cacheWrite;
   });
 
-  const hasEstimatedCosts = steps.some(s => s.costIsEstimate);
+  const hasEstimatedCosts = filteredSteps.some(s => s.costIsEstimate);
 
   // Pie chart data - Cost by Type
   const pieData = {
@@ -189,9 +217,11 @@ const CostTab = ({ steps, analysis, sessionTotalCost, onGoToStep }: Props) => {
 
   return (
     <div className="cost-tab">
+      <AgentFilterBar subagents={subagents} value={filter} onChange={setFilter} />
+
       <div className="cost-summary">
         <div className="cost-card total">
-          <div className="cost-label">Total Cost</div>
+          <div className="cost-label">Cost</div>
           <div className="cost-value">
             {hasEstimatedCosts && <span className="cost-approx">≈</span>}
             ${totalCost.toFixed(4)}

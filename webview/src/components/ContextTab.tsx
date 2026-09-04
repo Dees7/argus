@@ -1,19 +1,28 @@
-import { Step, AnalysisResult, stepKey } from '../types/session';
+import { useMemo, useState } from 'react';
+import { Step, AnalysisResult, Subagent, stepKey } from '../types/session';
 import { oncePerResponse } from '../../../src/types/usage';
+import { filterStepsByAgent, TOTAL_FILTER, MAIN_FILTER, AgentFilter } from '../utils/agentFilter';
+import AgentFilterBar from './AgentFilterBar';
 import ContextTimeline from './ContextTimeline';
 import RequestWeight from './RequestWeight';
 import './ContextTab.css';
 
 interface Props {
+  /** Main session and every sub-agent, flattened — see `flattenSessionSteps`. */
   steps: Step[];
+  subagents: Subagent[];
   analysis?: AnalysisResult;
   onGoToStep?: (index: number) => void;
 }
 
-const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
+const ContextTab = ({ steps, subagents, analysis, onGoToStep }: Props) => {
+  const [filter, setFilter] = useState<AgentFilter>(TOTAL_FILTER);
+
+  const filteredSteps = useMemo(() => filterStepsByAgent(steps, filter), [steps, filter]);
+
   // Token metrics, counted once per API response: `usage` is repeated on every
   // step a response produced, so reducing over `steps` inflates every total.
-  const responses = oncePerResponse(steps);
+  const responses = oncePerResponse(filteredSteps);
 
   const totalInputTokens = responses.reduce((sum, s) =>
     sum + (s.usage?.input_tokens || 0) + (s.usage?.cache_creation_input_tokens || 0), 0);
@@ -34,16 +43,28 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
     : '0.0';
 
   // Find peak token step
-  const peakStep = steps.reduce((max, s) => {
+  const peakStep = filteredSteps.reduce((max, s) => {
     const tokens = (s.usage?.input_tokens || 0) + (s.usage?.output_tokens || 0);
     const maxTokens = (max.usage?.input_tokens || 0) + (max.usage?.output_tokens || 0);
     return tokens > maxTokens ? s : max;
-  }, steps[0]);
+  }, filteredSteps[0]);
 
   const peakTokens = (peakStep?.usage?.input_tokens || 0) + (peakStep?.usage?.output_tokens || 0);
 
+  // Compaction/pressure markers are indices local to whichever transcript the
+  // analyzer read — the main session's own, or one agent's. There's no single
+  // combined index space for "total", so no markers are drawn there.
+  const contextMetrics =
+    filter === MAIN_FILTER
+      ? analysis?.contextMetrics
+      : filter === TOTAL_FILTER
+      ? undefined
+      : subagents.find(s => s.agentId === filter)?.analysis?.contextMetrics;
+
   return (
     <div className="context-tab">
+      <AgentFilterBar subagents={subagents} value={filter} onChange={setFilter} />
+
       <div className="context-metrics">
         <div className="metric-card">
           <div className="metric-label">Total Input</div>
@@ -66,15 +87,15 @@ const ContextTab = ({ steps, analysis, onGoToStep }: Props) => {
       </div>
 
       <ContextTimeline
-        steps={steps}
-        compactionPoints={analysis?.contextMetrics?.compactionPoints}
-        pressureZones={analysis?.contextMetrics?.contextPressureZones}
+        steps={filteredSteps}
+        compactionPoints={contextMetrics?.compactionPoints}
+        pressureZones={contextMetrics?.contextPressureZones}
         onGoToStep={onGoToStep}
       />
 
       <RequestWeight
-        steps={steps}
-        compactionPoints={analysis?.contextMetrics?.compactionPoints}
+        steps={filteredSteps}
+        compactionPoints={contextMetrics?.compactionPoints}
         onGoToStep={onGoToStep}
       />
 

@@ -1,0 +1,30 @@
+.agent-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.agent-filter-btn {
+  padding: 4px 12px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.agent-filter-btn:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+.agent-filter-btn.active {
+  color: var(--text-bright);
+  background: var(--bg-panel);
+  border-color: var(--accent);
+}

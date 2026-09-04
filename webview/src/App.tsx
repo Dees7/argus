@@ -117,8 +117,9 @@ function App() {
 
   // Every other tab measures the session — cost, context, durations, file
   // dependencies — and a harness event is none of those things. They see the
-  // timeline without them, whatever the buttons say. `session.steps` is the
-  // main session alone (no sub-agents), which is what those tabs expect.
+  // timeline without them. Cost and Context filter this down to main/one
+  // agent/everything themselves (see `AgentFilterBar`); the rest still expect
+  // `mainSteps`, the main session alone.
   const analyticSteps = useMemo(() => flatSteps.filter(step => !isSystemStep(step)), [flatSteps]);
   const mainSteps = useMemo(
     () => (session ? session.steps.filter(step => !isSystemStep(step)) : []),
@@ -132,15 +133,6 @@ function App() {
   // to be numbered the way the Steps tab numbers it. Sub-agent steps stay out,
   // so a Task keeps the duration of the whole agent it spawned.
   const mainFlatSteps = useMemo(() => flatSteps.filter(step => !step.agentId), [flatSteps]);
-
-  // The same steps as `mainSteps` — so the token maths on the Context tab is
-  // unchanged — but numbered the way the Steps tab numbers them. Its charts
-  // navigate on click, and `session.steps` carries no `globalIndex` to
-  // navigate by.
-  const mainAnalyticSteps = useMemo(
-    () => mainFlatSteps.filter(step => !isSystemStep(step)),
-    [mainFlatSteps]
-  );
 
   // "Steps (55)" normally, "Steps (13/55)" while a search or filter narrows it.
   const stepsTabLabel =
@@ -459,9 +451,9 @@ function App() {
         )}
         {activeTab === 'cost' && (
           <CostTab
-            steps={mainSteps}
+            steps={analyticSteps}
+            subagents={session.subagents}
             analysis={session.analysis}
-            sessionTotalCost={session.totalCost}
             onGoToStep={goToStep}
           />
         )}
@@ -481,7 +473,8 @@ function App() {
         )}
         {activeTab === 'context' && (
           <ContextTab
-            steps={mainAnalyticSteps}
+            steps={analyticSteps}
+            subagents={session.subagents}
             analysis={session.analysis}
             onGoToStep={goToStep}
           />
