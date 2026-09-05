@@ -629,8 +629,8 @@ export class ParserService {
 
     let model = '';
     let effort = '';
-    let startTime = new Date();
-    let endTime = new Date();
+    let startTime: Date | undefined;
+    let endTime: Date | undefined;
     let totalCost = 0;
 
     // Track tool calls and their results. Two indexes: by the assistant
@@ -1098,7 +1098,12 @@ export class ParserService {
       }
     }
 
-    const durationMs = endTime.getTime() - startTime.getTime();
+    // No event carried a timestamp — an empty or malformed transcript. Both
+    // callers already guard against an empty `events` array, so this is a
+    // defensive fallback rather than the expected path.
+    const finalStartTime = startTime ?? new Date();
+    const finalEndTime = endTime ?? finalStartTime;
+    const durationMs = finalEndTime.getTime() - finalStartTime.getTime();
 
     return {
       sessionId,
@@ -1106,8 +1111,8 @@ export class ParserService {
       project,
       model,
       effort,
-      startTime,
-      endTime,
+      startTime: finalStartTime,
+      endTime: finalEndTime,
       durationMs,
       totalCost,
       steps,
