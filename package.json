@@ -256,7 +256,7 @@
             "en",
             "tr"
           ],
-          "description": "Language for analysis findings"
+          "description": "Locale for date/time formatting in session views. Leave unset to follow the system locale instead"
         },
         "argus.openLocation": {
           "type": "string",

@@ -196,6 +196,7 @@ export class SessionWebviewProviderReact {
     hideNotes: boolean;
     tabsCollapsed: boolean;
     searchCollapsed: boolean;
+    language?: string;
   } {
     const config = vscode.workspace.getConfiguration('argus');
     const sortOrder = config.get<string>('steps.sortOrder', 'newest');
@@ -203,6 +204,15 @@ export class SessionWebviewProviderReact {
     // Hand-edited settings.json can hold anything — keep only non-empty
     // strings so the webview never has to guard the patterns itself.
     const autoExpand = config.get<unknown>('steps.autoExpand', []);
+    // `language` defaults to 'en' in package.json, which is indistinguishable
+    // from "the user picked English" via a plain `get`. Only pass it down
+    // when the user actually set it somewhere — otherwise the webview falls
+    // back to the system/VS Code locale instead of forcing English.
+    const languageInspect = config.inspect<string>('language');
+    const languageIsSet =
+      languageInspect?.globalValue !== undefined ||
+      languageInspect?.workspaceValue !== undefined ||
+      languageInspect?.workspaceFolderValue !== undefined;
 
     return {
       stepsSortOrder: allowed.includes(sortOrder) ? sortOrder : 'newest',
@@ -212,6 +222,7 @@ export class SessionWebviewProviderReact {
       hideNotes: config.get<boolean>('notes.hideNotes', false),
       tabsCollapsed: this.context.globalState.get<boolean>(TABS_COLLAPSED_KEY, false),
       searchCollapsed: this.context.globalState.get<boolean>(SEARCH_COLLAPSED_KEY, false),
+      language: languageIsSet ? config.get<string>('language') : undefined,
     };
   }
 

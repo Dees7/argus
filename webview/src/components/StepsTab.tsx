@@ -43,6 +43,9 @@ interface Props {
   // box, and a query the user cannot see or clear is worse than no filter at
   // all — so the bar comes back on its own when that happens.
   onRevealControls?: () => void;
+  // Locale from settings (argus.language). Undefined means "use the system
+  // locale" — only set when the user picked one explicitly.
+  language?: string;
 }
 
 /* ── SVG icons ── */
@@ -397,7 +400,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // send is the number these rows are keyed by.
 const keyOf = stepKey;
 
-const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, language }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -869,7 +872,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
   const formatTime = (timestamp?: string | Date) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
   const formatDuration = (ms: number): string => {

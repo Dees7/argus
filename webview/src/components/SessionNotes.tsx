@@ -3,6 +3,9 @@ import './SessionNotes.css';
 
 interface Props {
   sessionId: string;
+  // Locale from settings (argus.language). Undefined means "use the system
+  // locale" — only set when the user picked one explicitly.
+  language?: string;
 }
 
 interface Note {
@@ -12,7 +15,7 @@ interface Note {
   stepIndex?: number;
 }
 
-const SessionNotes = ({ sessionId }: Props) => {
+const SessionNotes = ({ sessionId, language }: Props) => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
@@ -54,7 +57,7 @@ const SessionNotes = ({ sessionId }: Props) => {
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleString('tr-TR', {
+    return date.toLocaleString(language, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',

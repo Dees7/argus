@@ -27,6 +27,9 @@ function App() {
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
   const [stepsAutoExpand, setStepsAutoExpand] = useState<string[]>([]);
   const [hideNotes, setHideNotes] = useState(false);
+  // argus.language, forwarded only when the user explicitly set it (see
+  // getUiConfig on the host side) — undefined means "use the system locale".
+  const [language, setLanguage] = useState<string | undefined>(undefined);
   // Tab bar / Steps search bar folded away. The extension host owns these
   // flags (global state), so they are the same in every session panel and
   // survive a reload.
@@ -66,6 +69,9 @@ function App() {
         if (typeof message.data?.searchCollapsed === 'boolean') {
           setSearchCollapsed(message.data.searchCollapsed);
         }
+        // Unlike the flags above, absence is meaningful here (system locale),
+        // so every config message sets it — including back to undefined.
+        setLanguage(typeof message.data?.language === 'string' ? message.data.language : undefined);
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
         setMapEntries(Array.isArray(message.entries) ? message.entries : []);
@@ -437,6 +443,7 @@ function App() {
             hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
             onRevealControls={revealSearch}
+            language={language}
           />
         )}
         {activeTab === 'analysis' && (
@@ -498,7 +505,7 @@ function App() {
 
         {/* Session Notes — hidden by argus.notes.hideNotes; saved notes stay in
             localStorage and come back when the setting is turned off again. */}
-        {!hideNotes && <SessionNotes sessionId={session.sessionId} />}
+        {!hideNotes && <SessionNotes sessionId={session.sessionId} language={language} />}
       </div>
     </div>
   );

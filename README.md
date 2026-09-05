@@ -188,7 +188,7 @@ Argus exposes the following VS Code settings:
 | Setting | Default | Description |
 | --- | --- | --- |
 | `argus.scanDepth` | `5` | Maximum directory depth when scanning `.claude` directories |
-| `argus.language` | `"en"` | UI / findings language — `"en"` or `"tr"` |
+| `argus.language` | `"en"` | Locale for date/time formatting in session views (step timestamps, note dates) — `"en"` or `"tr"`. Leave unset to follow the system locale instead |
 | `argus.openLocation` | `"active"` | Where a session opens — `"active"` (tab in the current group) or `"beside"` |
 | `argus.searchBar.showModelSelector` | `true` | Show the model selector next to the search box in the Sessions view |
 | `argus.steps.sortOrder` | `"newest"` | Default Steps sort — `"newest"`, `"oldest"`, `"cost-desc"`, `"cost-asc"` |
