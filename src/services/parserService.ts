@@ -404,13 +404,13 @@ export class ParserService {
    * Extract quick metadata from a session file without full parsing
    */
   async quickMetadataWithPrompt(filePath: string): Promise<QuickMetadata | null> {
-    try {
-      const fileStream = fs.createReadStream(filePath);
-      const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-      });
+    const fileStream = fs.createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
 
+    try {
       let model = '';
       let firstTimestamp = '';
       let lastTimestamp = '';
@@ -473,7 +473,6 @@ export class ParserService {
           // Stop early once we have all the metadata we need, or once we are
           // deep enough that whatever is still missing is not coming.
           if ((model && prompt && cwd && aiTitle) || lines >= HEAD_SCAN_LINES) {
-            rl.close();
             break;
           }
         } catch {
@@ -503,6 +502,9 @@ export class ParserService {
     } catch (err) {
       console.error('Error reading metadata from', filePath, err);
       return null;
+    } finally {
+      rl.close();
+      fileStream.destroy();
     }
   }
 
