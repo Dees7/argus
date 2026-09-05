@@ -30,12 +30,12 @@ interface StateDb {
 /** SQLite's variable-length integer: 7 bits per byte, big-endian, up to 9 bytes. */
 function readVarint(buf: Buffer, offset: number): { value: number; size: number } {
   let value = 0;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     const byte = buf[offset + i];
     if (byte === undefined) {
       throw new Error('truncated varint');
     }
-    if (i === 7) {
+    if (i === 8) {
       // The 9th byte contributes all 8 of its bits, not 7.
       return { value: value * 256 + byte, size: 9 };
     }
