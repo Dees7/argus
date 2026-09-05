@@ -112,7 +112,7 @@ Argus ships with a rule-based analyzer that flags the patterns that quietly wast
 | **Flow** | D3-powered dependency graph of file Reads / Writes / Edits across steps |
 | **Context** | Token budget, cache performance, I/O distribution, compaction markers |
 | **Insights** | AI-derived recommendations and pattern observations |
-| **Map** | Birds-eye view of the session topology |
+| **Map** | Every file the session touched, as a tree it plays back step by step — files outside the working directory included, folders it never opened left out, plus the scratch files it created and deleted (click one to read what the transcript kept of it) |
 
 ### Sidebar & filtering
 
