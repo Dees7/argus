@@ -39,25 +39,32 @@ const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGo
     const results: Insight[] = [];
 
     // File read patterns
-    const fileReadCount = new Map<string, number>();
+    const fileReadCount = new Map<string, { count: number; totalCost: number; firstCost: number }>();
     steps.forEach(step => {
       if (step.toolName === 'Read' && step.toolInput?.file_path) {
         const path = step.toolInput.file_path;
-        fileReadCount.set(path, (fileReadCount.get(path) || 0) + 1);
+        const entry = fileReadCount.get(path);
+        if (entry) {
+          entry.count += 1;
+          entry.totalCost += step.cost;
+        } else {
+          fileReadCount.set(path, { count: 1, totalCost: step.cost, firstCost: step.cost });
+        }
       }
     });
 
     // Duplicate reads insight
-    const duplicateReads = Array.from(fileReadCount.entries()).filter(([_, count]) => count > 3);
+    const duplicateReads = Array.from(fileReadCount.entries()).filter(([_, e]) => e.count > 3);
     if (duplicateReads.length > 0) {
-      const [mostReadFile, count] = duplicateReads[0];
+      const [mostReadFile, entry] = duplicateReads[0];
       const fileName = mostReadFile.split('/').pop() || mostReadFile;
       results.push({
         type: 'optimization',
         icon: '💡',
         title: `Heavy File Re-reading Detected`,
-        description: `${fileName} was read ${count} times. Consider implementing a caching strategy or breaking down the task to reduce redundant reads.`,
-        potentialSavings: 0.15 * (count - 1),
+        description: `${fileName} was read ${entry.count} times. Consider implementing a caching strategy or breaking down the task to reduce redundant reads.`,
+        // First read is not wasted, subsequent ones are — mirrors DuplicateReadRule.
+        potentialSavings: entry.totalCost - entry.firstCost,
       });
     }
 
@@ -102,7 +109,7 @@ const InsightsTab = ({ steps, flatSteps, analysis, filesRead, filesWritten, onGo
     }
 
     // Efficiency achievements
-    const efficiency = analysis?.efficiency || 100;
+    const efficiency = analysis?.efficiency ?? 100;
     if (efficiency >= 90) {
       results.push({
         type: 'success',
