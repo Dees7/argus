@@ -145,73 +145,10 @@ export interface Subagent {
   analysis?: AnalysisResult;
 }
 
-/**
- * A step that records something the harness did — a hook that blocked a call,
- * and the other kinds as they get parsed — rather than an action the model
- * took. They are hidden until their button in the session header is pressed,
- * and every tab that measures the session leaves them out.
- */
-export function isSystemStep(step: Step): boolean {
-  return step.type === 'system';
-}
-
-/**
- * Build a chronologically interleaved list of main + sub-agent steps. Each
- * agent's steps follow the Task step that spawned them, and every step gets a
- * stable `globalIndex` for cross-tab navigation.
- */
-export function flattenSessionSteps(session: SessionDetail): Step[] {
-  const spawnedAt = new Map<string, Subagent[]>();
-  for (const sub of session.subagents) {
-    if (typeof sub.parentStepIndex === 'number') {
-      const k = spawnKey(sub.parentAgentId, sub.parentStepIndex);
-      const arr = spawnedAt.get(k) ?? [];
-      arr.push(sub);
-      spawnedAt.set(k, arr);
-    }
-  }
-
-  const out: Step[] = [];
-  const push = (s: Step, agentId?: string) => {
-    out.push({ ...s, agentId: agentId ?? s.agentId, globalIndex: out.length });
-  };
-
-  // Recursive: an agent's steps can spawn further agents, each inlined right
-  // after its own Task step. `emitted` also guards against parent-link cycles.
-  const emitted = new Set<string>();
-  const emit = (steps: Step[], agentId?: string) => {
-    for (const s of steps) {
-      push(s, agentId);
-      const children = spawnedAt.get(spawnKey(agentId, s.index));
-      if (!children) continue;
-      for (const child of children) {
-        if (emitted.has(child.agentId)) continue;
-        emitted.add(child.agentId);
-        emit(child.steps, child.agentId);
-      }
-    }
-  };
-  emit(session.steps);
-
-  // Agents whose spawning step couldn't be resolved go to the tail rather than
-  // disappearing; unparented ones first so their children nest under them.
-  for (const sub of session.subagents) {
-    if (emitted.has(sub.agentId) || typeof sub.parentStepIndex === 'number') continue;
-    emitted.add(sub.agentId);
-    emit(sub.steps, sub.agentId);
-  }
-  for (const sub of session.subagents) {
-    if (emitted.has(sub.agentId)) continue;
-    emitted.add(sub.agentId);
-    emit(sub.steps, sub.agentId);
-  }
-  return out;
-}
-
-/** Key for "agents spawned by step N of agent X" (X empty = main session). */
-export function spawnKey(agentId: string | undefined, stepIndex: number): string {
-  return `${agentId ?? ''}:${stepIndex}`;
-}
+// Flattening main + sub-agent steps lives in its own dependency-free module so
+// this build can import the same implementation the host uses instead of
+// keeping a second copy — see `../../../src/types/sessionSteps`.
+export { isSystemStep, spawnKey, flattenSessionSteps } from '../../../src/types/sessionSteps';
 
 export interface AnalysisResult {
   findings: Finding[];
