@@ -5,6 +5,7 @@ import { DiscoveryService } from './services/discoveryService';
 import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
 import { SearchService } from './services/searchService';
+import { CostService, COST_TTL_MS } from './services/costService';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
@@ -35,6 +36,7 @@ export function activate(context: vscode.ExtensionContext) {
   const parserService = new ParserService();
   const analyzerService = new AnalyzerService();
   const searchService = new SearchService();
+  const costService = new CostService();
 
   // Initialize providers
   const webviewProvider = new SessionWebviewProviderReact(
@@ -70,6 +72,15 @@ export function activate(context: vscode.ExtensionContext) {
   // is in effect (the toggle is off, or the query is empty).
   let contentMatches: Set<string> | null = null;
   let searchGeneration = 0;
+
+  // Cost column. Pricing every session means reading every transcript, so it is
+  // off until the user asks for it from the title bar, and turns itself back
+  // off once the figures are old enough to be worth recomputing rather than
+  // trusting — see `COST_TTL_MS`.
+  let costMode = false;
+  let costExpiryTimer: NodeJS.Timeout | undefined;
+  let costSyncInFlight = false;
+  const sessionCosts = new Map<string, number>();
 
   // --- Filtering logic ---
 
@@ -173,8 +184,78 @@ export function activate(context: vscode.ExtensionContext) {
     listViewProvider.updateSessions(
       filtered,
       filterState,
-      collectModelFilterOptions(allSessions.map(s => s.model))
+      collectModelFilterOptions(allSessions.map(s => s.model)),
+      costMode ? sessionCosts : null
     );
+    // The total covers what the list shows, not what was priced: the figures
+    // are computed across every project, but the number in the title bar has to
+    // answer for the rows under it, funnel and search box included.
+    listViewProvider.setCostTotal(
+      costMode
+        ? formatUsd(filtered.reduce((sum, s) => sum + (sessionCosts.get(s.sessionId) ?? 0), 0))
+        : undefined
+    );
+    syncCosts();
+  }
+
+  /**
+   * `$12.34`, `$1,543` — cents while they still mean something, and none once
+   * the total is into the thousands, where they are four digits of noise in a
+   * title bar.
+   */
+  function formatUsd(value: number): string {
+    const digits = value >= 1000 ? 0 : 2;
+    return '$' + value.toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  }
+
+  /**
+   * Price sessions the cost column is missing figures for: the ones named in
+   * `changed`, plus any session that appeared since the scan. Runs in the
+   * background — a session arriving while the column is on must not put the
+   * progress dialog back up.
+   */
+  function syncCosts(changed: string[] = []) {
+    if (!costMode || costSyncInFlight) {
+      return;
+    }
+
+    const live = new Set(allSessions.map(s => s.sessionId));
+    for (const id of [...sessionCosts.keys()]) {
+      if (!live.has(id)) {
+        sessionCosts.delete(id); // Session was deleted; drop it from the total.
+      }
+    }
+
+    const needed = new Set(changed.filter(id => live.has(id)));
+    for (const s of allSessions) {
+      if (!sessionCosts.has(s.sessionId)) {
+        needed.add(s.sessionId);
+      }
+    }
+    if (needed.size === 0) {
+      return;
+    }
+
+    const targets = discoveryService.getSessionFiles().filter(t => needed.has(t.sessionId));
+    costSyncInFlight = true;
+    void costService
+      .computeAll(targets, undefined, () => !costMode)
+      .then(costs => {
+        costSyncInFlight = false;
+        if (!costMode || costs.size === 0) {
+          return;
+        }
+        for (const [id, cost] of costs) {
+          sessionCosts.set(id, cost);
+        }
+        refreshList();
+      })
+      .catch(() => {
+        costSyncInFlight = false;
+      });
   }
 
   /**
@@ -311,6 +392,7 @@ export function activate(context: vscode.ExtensionContext) {
       'argus.filter.currentProject',
       filterState.onlyCurrentProject
     );
+    vscode.commands.executeCommand('setContext', 'argus.costs.shown', costMode);
   }
 
   function toggleModel(model: string) {
@@ -516,6 +598,98 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('argus.filterCurrentProjectOff', toggleProjectFilter)
   );
 
+  // --- Cost column ---
+
+  function hideCosts() {
+    costMode = false;
+    costSyncInFlight = false;
+    sessionCosts.clear();
+    if (costExpiryTimer) {
+      clearTimeout(costExpiryTimer);
+      costExpiryTimer = undefined;
+    }
+    syncContextKeys();
+    refreshList();
+  }
+
+  /**
+   * Price every session there is, behind a progress dialog: the scan reads each
+   * transcript in full, so it is slow enough and costly enough that it has to
+   * be visible, interruptible, and never started on the user's behalf.
+   *
+   * Every project is scanned even when the funnel is on — the column is priced
+   * once and then answers any filter the user reaches for, rather than
+   * re-scanning each time they change their mind.
+   */
+  async function showCosts() {
+    let targets = discoveryService.getSessionFiles();
+    if (targets.length === 0) {
+      // Pressed before the first discovery finished — wait for it rather than
+      // reporting that there is nothing to price.
+      await ensureSessions();
+      targets = discoveryService.getSessionFiles();
+    }
+    if (targets.length === 0) {
+      vscode.window.showInformationMessage('Argus: no sessions to price.');
+      return;
+    }
+
+    const costs = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Argus: calculating session costs',
+        cancellable: true,
+      },
+      async (progress, token) => {
+        let lastReported = 0;
+        const result = await costService.computeAll(
+          targets,
+          (done, total, runningTotal) => {
+            // One report per session would repaint the dialog hundreds of
+            // times; the increment is carried over so the bar still ends full.
+            progress.report({
+              increment: ((done - lastReported) / total) * 100,
+              message: `${done} of ${total} sessions · ${formatUsd(runningTotal)}`,
+            });
+            lastReported = done;
+          },
+          () => token.isCancellationRequested
+        );
+        return token.isCancellationRequested ? null : result;
+      }
+    );
+
+    // A cancelled scan leaves the column off. Nothing is wasted: whatever it
+    // priced stays cached, so starting again picks up where it stopped.
+    if (!costs) {
+      return;
+    }
+
+    sessionCosts.clear();
+    for (const [id, cost] of costs) {
+      sessionCosts.set(id, cost);
+    }
+
+    costMode = true;
+    if (costExpiryTimer) {
+      clearTimeout(costExpiryTimer);
+    }
+    // Figures this old are worth recomputing rather than believing, so the
+    // button releases itself and the column goes with it.
+    costExpiryTimer = setTimeout(() => {
+      costService.clear();
+      hideCosts();
+    }, COST_TTL_MS);
+
+    syncContextKeys();
+    refreshList();
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('argus.showCosts', () => showCosts()),
+    vscode.commands.registerCommand('argus.hideCosts', hideCosts)
+  );
+
   // Opening or closing a folder changes what "current project" means.
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
@@ -574,10 +748,16 @@ export function activate(context: vscode.ExtensionContext) {
   // timer, but only while something is actually marked live — otherwise this
   // is a no-op comparison and costs nothing.
   const liveTicker = setInterval(() => {
-    if (allSessions.some(s => s.isActive)) {
-      allSessions = discoveryService.getSessionSummaries();
-      refreshList();
+    const active = allSessions.filter(s => s.isActive);
+    if (active.length === 0) {
+      return;
     }
+    allSessions = discoveryService.getSessionSummaries();
+    // A live session's price grows with every turn. Re-pricing it on the
+    // watcher's burst would re-read a growing transcript several times a
+    // second, so it rides this tick instead.
+    syncCosts(active.map(s => s.sessionId));
+    refreshList();
   }, 30 * 1000);
 
   // Archiving happens in Claude Code's extension, which sends us nothing when
@@ -596,6 +776,9 @@ export function activate(context: vscode.ExtensionContext) {
       clearInterval(archiveTicker);
       if (sessionRefreshTimer) {
         clearTimeout(sessionRefreshTimer);
+      }
+      if (costExpiryTimer) {
+        clearTimeout(costExpiryTimer);
       }
     },
   });

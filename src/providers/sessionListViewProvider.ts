@@ -16,6 +16,12 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
   private _modelOptions: ModelFilterOption[] = [];
   private _extensionPath: string;
   private _onRefresh?: () => void;
+  /** Prices by session id while the cost column is on, `null` while it is off. */
+  private _costs: Map<string, number> | null = null;
+  /** Total over the sessions currently listed, shown in the view title. */
+  private _costTotal?: string;
+  /** The view's own name, to put back when the total goes away. */
+  private _baseTitle = 'Sessions';
 
   constructor(
     extensionPath: string,
@@ -38,6 +44,10 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ): void {
     this._view = webviewView;
+    // Whatever the view is called, without a total we appended earlier: a view
+    // resolved a second time may still be carrying the title we left on it.
+    this._baseTitle = (webviewView.title || this._baseTitle).split(' · ')[0];
+    this.applyCostTotal();
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -68,7 +78,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     // Send cached sessions when the view first opens
     if (this._sessions.length > 0 && this._filterState) {
-      this.updateSessions(this._sessions, this._filterState, this._modelOptions);
+      this.updateSessions(this._sessions, this._filterState, this._modelOptions, this._costs);
     } else if (this._onRefresh) {
       this._onRefresh();
     }
@@ -77,11 +87,13 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
   updateSessions(
     sessions: SessionSummary[],
     filterState: FilterState,
-    modelOptions: ModelFilterOption[]
+    modelOptions: ModelFilterOption[],
+    costs: Map<string, number> | null = null
   ): void {
     this._sessions = sessions;
     this._filterState = filterState;
     this._modelOptions = modelOptions;
+    this._costs = costs;
     this._view?.webview.postMessage({
       type: 'update',
       // Model naming is resolved here rather than in the view script, so the
@@ -93,13 +105,38 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
           modelKey: family.key,
           modelLabel: formatModelLabel(s.model),
           modelGroupLabel: modelGroupLabel(family),
+          // Absent while the column is off, and while a session added since
+          // the scan has not been priced yet.
+          cost: costs?.get(s.sessionId),
           timestamp: s.timestamp.toISOString(),
           lastModified: s.lastModified.toISOString(),
         };
       }),
       filterState,
       modelOptions,
+      showCost: costs !== null,
     });
+  }
+
+  /**
+   * Total over the sessions the list currently shows, or `undefined` to drop
+   * it. A view's toolbar holds icons and nothing else, so the title is the only
+   * text in that bar — and it has to be the title rather than the description:
+   * Argus contributes a single view, which VS Code merges into its container's
+   * header, and a merged view's description is never drawn.
+   */
+  setCostTotal(text: string | undefined): void {
+    this._costTotal = text;
+    this.applyCostTotal();
+  }
+
+  private applyCostTotal(): void {
+    if (!this._view) {
+      return;
+    }
+    this._view.title = this._costTotal
+      ? `${this._baseTitle} · ${this._costTotal}`
+      : this._baseTitle;
   }
 
   clearSearch(): void {
@@ -648,6 +685,16 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-descriptionForeground);
     white-space: nowrap;
   }
+  /* Cost sits ahead of the rest of the subtitle and is the one number in the
+     row, so it gets its own weight rather than blending into the metadata. */
+  .session-cost {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--vscode-charts-green, var(--vscode-foreground));
+    white-space: nowrap;
+  }
 
   /* Empty state */
   .empty {
@@ -1088,6 +1135,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
 
     let sessions = [];
     let filterState = {};
+    let showCost = false;
     let showModel = ${showModel};
     let showProject = ${showProject};
     let collapsedGroups = new Set();
@@ -1130,6 +1178,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       if (msg.type === 'update') {
         sessions = msg.sessions;
         filterState = msg.filterState;
+        showCost = !!msg.showCost;
         renderModelMenu(msg.modelOptions || []);
         render();
       } else if (msg.type === 'clearSearch') {
@@ -1240,10 +1289,25 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
       return '';
     }
 
+    // "$0.42" — two decimals down to a cent, and a marker below it, because a
+    // session that cost something must never read as free.
+    function formatCost(value) {
+      if (!value) return '$0.00';
+      if (value < 0.01) return '<$0.01';
+      return '$' + value.toFixed(2);
+    }
+
     function renderSessionItem(s, grouped) {
       // Liveness wins over the archived mark: a session being written to right
       // now is the more urgent thing to say about it.
       const icon = s.isActive ? LIVE_ICON : (s.isArchived ? ARCHIVED_ICON : SESSION_ICON);
+      // A priced session shows its figure; one added since the scan shows an
+      // ellipsis until the background pass gets to it.
+      const costHtml = showCost
+        ? '<span class="session-cost" title="Estimated from the token counts in the transcript">'
+          + (typeof s.cost === 'number' ? formatCost(s.cost) : '…')
+          + '</span>'
+        : '';
       const desc = [
         showModel ? s.modelLabel : '',
         showProject ? shortProject(s.project) : '',
@@ -1261,6 +1325,7 @@ export class SessionListViewProvider implements vscode.WebviewViewProvider {
         + ' title="' + escapeHtml(tooltip) + '">'
         + '<img class="session-icon" src="' + icon + '">'
         + '<span class="session-label">' + escapeHtml(label) + '</span>'
+        + costHtml
         + '<span class="session-desc">' + escapeHtml(desc) + '</span>'
         + '</div>';
     }

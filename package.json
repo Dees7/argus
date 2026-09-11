@@ -190,6 +190,21 @@
         "title": "Show Sessions From All Projects",
         "icon": "$(filter-filled)",
         "category": "Argus"
+      },
+      {
+        "command": "argus.showCosts",
+        "title": "Show Session Costs",
+        "icon": "resources/cost.svg",
+        "category": "Argus"
+      },
+      {
+        "command": "argus.hideCosts",
+        "title": "Hide Session Costs",
+        "icon": {
+          "light": "resources/cost-active-light.svg",
+          "dark": "resources/cost-active-dark.svg"
+        },
+        "category": "Argus"
       }
     ],
     "submenus": [
@@ -202,24 +217,34 @@
     "menus": {
       "view/title": [
         {
+          "command": "argus.showCosts",
+          "when": "view == argusSessionList && !argus.costs.shown",
+          "group": "navigation@1"
+        },
+        {
+          "command": "argus.hideCosts",
+          "when": "view == argusSessionList && argus.costs.shown",
+          "group": "navigation@1"
+        },
+        {
           "command": "argus.filterCurrentProjectOn",
           "when": "view == argusSessionList && !argus.filter.currentProject",
-          "group": "navigation@1"
+          "group": "navigation@2"
         },
         {
           "command": "argus.filterCurrentProjectOff",
           "when": "view == argusSessionList && argus.filter.currentProject",
-          "group": "navigation@1"
+          "group": "navigation@2"
         },
         {
           "submenu": "argus.groupMenu",
           "when": "view == argusSessionList",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "argus.refreshSessions",
           "when": "view == argusSessionList",
-          "group": "navigation@3"
+          "group": "navigation@4"
         }
       ],
       "argus.groupMenu": [

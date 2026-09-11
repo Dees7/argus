@@ -314,11 +314,12 @@ export class DiscoveryService {
   }
 
   /**
-   * Every discovered session paired with the transcript files that make it up,
-   * for full-text search.
+   * Every discovered session paired with the transcript files that make it up.
+   * Both whole-session passes — full-text search and pricing — work from this,
+   * so neither has to know that a session is more than one file.
    */
-  getSearchTargets(): SearchTarget[] {
-    const targets: SearchTarget[] = [];
+  getSessionFiles(): Array<{ sessionId: string; files: string[] }> {
+    const targets: Array<{ sessionId: string; files: string[] }> = [];
     for (const ds of this.sessionIndex.values()) {
       targets.push({
         sessionId: ds.sessionId,
@@ -326,6 +327,11 @@ export class DiscoveryService {
       });
     }
     return targets;
+  }
+
+  /** See `getSessionFiles` — the same list, named for the search that uses it. */
+  getSearchTargets(): SearchTarget[] {
+    return this.getSessionFiles();
   }
 
   /**
