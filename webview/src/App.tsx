@@ -21,7 +21,10 @@ function App() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('steps');
   const [loading, setLoading] = useState(true);
-  const [highlightStep, setHighlightStep] = useState<number | null>(null);
+  // A request to jump to a step, not a property of the session: `nonce` makes
+  // every click its own event, so clicking the same link twice navigates twice
+  // and a session that reloads mid-run doesn't re-fire the last jump.
+  const [jumpTo, setJumpTo] = useState<{ step: number; nonce: number } | null>(null);
   const [mapCwd, setMapCwd] = useState<string>('');
   const [mapEntries, setMapEntries] = useState<DirEntry[]>([]);
   const [stepsSortOrder, setStepsSortOrder] = useState('newest');
@@ -174,7 +177,7 @@ function App() {
 
   const goToStep = (stepIndex: number) => {
     setActiveTab('steps');
-    setHighlightStep(stepIndex);
+    setJumpTo(prev => ({ step: stepIndex, nonce: (prev?.nonce ?? 0) + 1 }));
   };
 
   const formatModel = formatModelLabel;
@@ -437,7 +440,8 @@ function App() {
             subagents={session.subagents}
             mainEffort={session.effort}
             findings={session.analysis?.findings || []}
-            highlightStep={highlightStep}
+            jumpTo={jumpTo}
+            onJumpHandled={() => setJumpTo(null)}
             defaultSortMode={stepsSortOrder}
             autoExpand={stepsAutoExpand}
             hideControls={searchCollapsed}

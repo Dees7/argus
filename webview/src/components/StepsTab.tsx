@@ -26,7 +26,18 @@ interface Props {
   // badge when theirs differs — see `effortBadge`.
   mainEffort?: string;
   findings: Finding[];
-  highlightStep: number | null;
+  /**
+   * A step to jump to, as an event rather than a state: `nonce` changes on
+   * every request, and nothing else here re-fires one. Two consequences worth
+   * keeping — clicking the same link twice navigates twice, and a live session
+   * appending steps never drags the view back to an old jump.
+   */
+  jumpTo?: { step: number; nonce: number } | null;
+  // Called once the jump has been carried out, so the parent can drop the
+  // request. Without it the request would outlive the navigation and fire
+  // again on the next mount — leaving the Steps tab and coming back would
+  // scroll to whatever was last jumped to.
+  onJumpHandled?: () => void;
   // Sort order from settings (argus.steps.sortOrder); also what "Clear
   // filters" resets to. Defaults to 'newest' for callers without a config.
   defaultSortMode?: string;
@@ -425,7 +436,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // send is the number these rows are keyed by.
 const keyOf = stepKey;
 
-const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onGoToStep, language }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, onJumpHandled, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onGoToStep, language }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -589,38 +600,65 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
     return () => document.removeEventListener('click', close);
   }, []);
 
-  // Auto-expand highlighted step. If the step belongs to a sub-agent that the
-  // user previously collapsed, also reveal it so the highlight isn't filtered
-  // out of the rendered list.
+  // Which row is painted as the destination of the last jump. Held here rather
+  // than passed in, so a jump is over once it has happened: the parent's
+  // request is an event, and this is the only thing that outlives it.
+  const [highlightStep, setHighlightStep] = useState<number | null>(null);
+
+  // Everything the jump needs to *read* is taken from refs. Putting `steps` or
+  // the collapse sets in the dependency list would re-run the jump whenever a
+  // live session appends a step, yanking the view back to a step the user
+  // navigated away from minutes ago.
+  const jumpContext = useRef({ steps, isAutoExpanded, onJumpHandled });
+  jumpContext.current = { steps, isAutoExpanded, onJumpHandled };
+
+  // Jump to the requested step: paint it, force it open, and — if it belongs
+  // to a sub-agent the user had collapsed — reveal that agent, or the row
+  // would not be in the rendered list to scroll to.
   useEffect(() => {
-    if (highlightStep !== null) {
-      const target = steps.find(s => keyOf(s) === highlightStep);
-      // Force the step open: drop the flip if it is auto-expanded already,
-      // add one otherwise.
-      setToggledSteps(prev => {
+    if (!jumpTo) {
+      return;
+    }
+
+    const { step: stepToShow } = jumpTo;
+    const {
+      steps: currentSteps,
+      isAutoExpanded: autoExpanded,
+      onJumpHandled: handled,
+    } = jumpContext.current;
+    const target = currentSteps.find(s => keyOf(s) === stepToShow);
+
+    setHighlightStep(stepToShow);
+    // Force the step open: drop the flip if it is auto-expanded already,
+    // add one otherwise.
+    setToggledSteps(prev => {
+      const next = new Set(prev);
+      if (target && autoExpanded(target)) next.delete(stepToShow);
+      else next.add(stepToShow);
+      return next;
+    });
+    if (target?.agentId) {
+      setCollapsedAgents(prev => {
+        if (!prev.has(target.agentId!)) return prev;
         const next = new Set(prev);
-        if (target && isAutoExpanded(target)) next.delete(highlightStep);
-        else next.add(highlightStep);
+        next.delete(target.agentId!);
         return next;
       });
-      if (target?.agentId && collapsedAgents.has(target.agentId)) {
-        setCollapsedAgents(prev => {
-          const next = new Set(prev);
-          next.delete(target.agentId!);
-          return next;
-        });
-      }
-      // Align the step's top edge with the top of the scroll area rather than
-      // centring it — an expanded step (a compaction summary especially) can be
-      // taller than the viewport, and centring would land mid-text.
-      setTimeout(() => {
-        const element = document.querySelector('.step-item.highlight');
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 100);
     }
-  }, [highlightStep, steps, collapsedAgents, isAutoExpanded]);
+    // Align the step's top edge with the top of the scroll area rather than
+    // centring it — an expanded step (a compaction summary especially) can be
+    // taller than the viewport, and centring would land mid-text.
+    setTimeout(() => {
+      const element = document.querySelector('.step-item.highlight');
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      // Only now is the request spent: the scroll needs the row to have been
+      // rendered expanded, and clearing earlier would be clearing before the
+      // navigation it stands for has actually happened.
+      handled?.();
+    }, 100);
+  }, [jumpTo]);
 
   const toggleStep = (index: number) => {
     setToggledSteps(prev => {
