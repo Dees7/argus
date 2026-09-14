@@ -1013,10 +1013,14 @@
 }
 
 /* The message id and the link to the session on the other end, under an
-   opened inbound message. */
+   opened inbound message. One line, wrapping only when it has to: this shares
+   `.detail-section`, which stacks its children, so the direction has to be
+   stated or the id, the path and the button end up one per row. */
 .step-peer-source {
   display: flex;
+  flex-direction: row;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
 }
