@@ -64,6 +64,34 @@ export interface StepPermission {
   hookName?: string;
 }
 
+/**
+ * Who sent an inbound message when it was not the user: the coordinator that
+ * spawned this agent, or an independent Claude session on the same machine.
+ * Set on steps of type `peer_message`.
+ */
+export interface StepOrigin {
+  kind: 'peer' | 'coordinator';
+  /** Peer only: the sender's session name at send time. */
+  name?: string;
+  /** Peer only: pid of the sending process. */
+  pid?: number;
+  /** Shared by both transcripts — the id the receiving session recorded. */
+  msgId?: string;
+  mode?: string;
+}
+
+/** Where a `SendMessage` call went — set on that tool call's step. */
+export interface StepMessageTarget {
+  kind: 'subagent' | 'peer' | 'unknown';
+  to: string;
+  /** Sub-agent sends: matches `Subagent.agentId`. */
+  agentId?: string;
+  /** Peer sends: matches the receiver's `StepOrigin.msgId`. */
+  msgId?: string;
+  /** `notify_when_idle` with no message — nothing was delivered. */
+  subscribeOnly?: boolean;
+}
+
 export interface Step {
   index: number;
   type: string;
@@ -95,6 +123,10 @@ export interface Step {
   costIsEstimate?: boolean;
   model?: string;
   usage?: TokenUsage;
+  // Set on steps of type `peer_message` — who sent it.
+  origin?: StepOrigin;
+  // Set on `SendMessage` tool calls — which channel it used and where it went.
+  messageTarget?: StepMessageTarget;
   agentId?: string;
   globalIndex?: number;
 }

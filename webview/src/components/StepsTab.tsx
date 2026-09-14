@@ -6,6 +6,7 @@ import ToolRenderer from './ToolRenderer';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
+import PeerSessionLink from './PeerSessionLink';
 import { isSystemFailure, systemKindInfo } from './systemSteps';
 import { computeStepDurations } from '../utils/stepDurations';
 import { stripAnsi } from '../utils/ansi';
@@ -43,6 +44,10 @@ interface Props {
   // box, and a query the user cannot see or clear is worse than no filter at
   // all — so the bar comes back on its own when that happens.
   onRevealControls?: () => void;
+  // Jump to another step of this session and highlight it — the same path the
+  // charts use. A `SendMessage` to a sub-agent links to the call that spawned
+  // it; without a handler the link is simply not rendered.
+  onGoToStep?: (stepKey: number) => void;
   // Locale from settings (argus.language). Undefined means "use the system
   // locale" — only set when the user picked one explicitly.
   language?: string;
@@ -98,7 +103,19 @@ const filterKeyOf = (step: Step): string =>
  * A filter key as it is shown. Tool names are already their own label; a
  * `system:<kind>` becomes its header button's wording, capitalised.
  */
+/**
+ * Step types whose internal name is not what a person calls them. Everything
+ * else — `text`, `thinking`, `user` — reads fine as it is stored.
+ */
+const STEP_TYPE_LABELS: Record<string, string> = {
+  peer_message: 'message in',
+};
+
 const filterKeyLabel = (key: string): string => {
+  // Plural, because a filter names a set of rows rather than one of them.
+  if (key === 'peer_message') {
+    return 'Messages received';
+  }
   if (!key.startsWith(SYSTEM_FILTER_PREFIX)) {
     return key;
   }
@@ -198,6 +215,14 @@ const StepIcon = ({ step }: { step: Step }) => {
       return (
         <svg className="step-icon step-icon-user" {...stepIconProps} stroke="currentColor">
           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+        </svg>
+      );
+    case 'peer_message':
+      // Arrow into a tray: a turn that arrived from another agent rather than
+      // from the person at the keyboard.
+      return (
+        <svg className="step-icon step-icon-peer" {...stepIconProps} stroke="currentColor">
+          <path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" /><path d="M12 3v10" /><path d="m8 9 4 4 4-4" />
         </svg>
       );
     case 'attachment':
@@ -400,7 +425,7 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
 // send is the number these rows are keyed by.
 const keyOf = stepKey;
 
-const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, language }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightStep, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onGoToStep, language }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -459,6 +484,22 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
     }
     return m;
   }, [subagents]);
+
+  // agentId → the step key of the call that spawned it, so a `SendMessage` to
+  // an agent can link back to where that agent came from. Built off `allSteps`:
+  // the spawn may sit inside another agent's transcript, and it stays
+  // reachable even when the current filter has hidden the row.
+  const spawnStepByAgent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const sub of subagents) {
+      if (typeof sub.parentStepIndex !== 'number') continue;
+      const spawn = (allSteps ?? steps).find(
+        s => s.agentId === sub.parentAgentId && s.index === sub.parentStepIndex
+      );
+      if (spawn) m.set(sub.agentId, keyOf(spawn));
+    }
+    return m;
+  }, [subagents, allSteps, steps]);
 
   // agentId → itself + all ancestors, so collapsing an agent also hides the
   // agents it spawned.
@@ -905,7 +946,12 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
     }
     // First non-empty line of the prompt/reply, so a turn is recognisable
     // while collapsed.
-    if (step.type === 'user' || step.type === 'text' || step.type === 'attachment') {
+    if (
+      step.type === 'user' ||
+      step.type === 'text' ||
+      step.type === 'peer_message' ||
+      step.type === 'attachment'
+    ) {
       const first = stripAnsi(step.content || '')
         .split('\n')
         .find(line => line.trim() !== '');
@@ -944,6 +990,18 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
         case 'Task':
         case 'Agent':
           return { text: description || input.prompt || '', mono: false };
+        case 'SendMessage':
+          // The recipient is already a chip of its own on this row, so the
+          // summary carries what was said — the sender's own one-line recap
+          // where there is one, the message itself otherwise.
+          return {
+            text:
+              (typeof input.summary === 'string' && input.summary.trim()) ||
+              (typeof input.message === 'string'
+                ? input.message.split('\n').find((line: string) => line.trim() !== '')?.trim() || ''
+                : ''),
+            mono: false,
+          };
         case 'AskUserQuestion': {
           // The question is the least interesting half of this step once it is
           // over — what the user picked is what the row is read for, so the
@@ -1087,6 +1145,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                 step.type === 'thinking' ||
                 step.type === 'compact' ||
                 step.type === 'user' ||
+                step.type === 'peer_message' ||
                 step.type === 'system') && !!step.content;
             const systemInfo = systemKindInfo(step.systemKind);
             // Where this step's response was billed, and how many steps that one
@@ -1108,6 +1167,13 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
             const allCollapsed = linkedAgents
               ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
               : false;
+            // Where a `SendMessage` went, and — for one addressed to this
+            // session's own agent — the call that started that agent, so the
+            // instruction can be read against the task it amends.
+            const target = step.toolName === 'SendMessage' ? step.messageTarget : undefined;
+            const targetSpawnKey = target?.agentId
+              ? spawnStepByAgent.get(target.agentId)
+              : undefined;
             // Tree-style connector positioning: the connector is owned by the
             // agent rows themselves — line begins at the first agent step's
             // top edge and terminates at the last with an "└" corner.
@@ -1134,6 +1200,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                   step.toolSuccess === false ? 'step-item-error' : '',
                   step.type === 'compact' ? 'step-item-compact' : '',
                   step.type === 'user' ? 'step-item-user' : '',
+                  step.type === 'peer_message' ? 'step-item-peer' : '',
                   step.type === 'system' ? 'step-item-system' : '',
                   step.type === 'system' && !isSystemFailure(step) ? 'step-item-system-notice' : '',
                   isAgent ? 'step-item-agent' : '',
@@ -1149,7 +1216,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                     <span className="step-index">#{k}</span>
                     <span className="step-time">{formatTime(step.timestamp)}</span>
                     <span className="step-type">
-                      {step.toolName || systemInfo?.label || step.type}
+                      {step.toolName || systemInfo?.label || STEP_TYPE_LABELS[step.type] || step.type}
                     </span>
                     {ownerAgent && (
                       <>
@@ -1169,6 +1236,61 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                           {ownerAgent.agentId}
                         </span>
                       </>
+                    )}
+                    {/* A message that arrived from another agent: who sent it,
+                      and over which channel. A coordinator is this agent's own
+                      parent; a peer is a session that shares nothing with this
+                      one but the machine. */}
+                    {step.origin && (
+                      <span className="step-peer-ref">
+                        <span className="step-peer-name">
+                          ← {step.origin.name || (step.origin.kind === 'coordinator' ? 'coordinator' : 'peer')}
+                        </span>
+                        <span
+                          className="step-peer-kind"
+                          title={
+                            step.origin.kind === 'peer'
+                              ? 'Sent by an independent Claude session on this machine'
+                              : 'Sent by the session that spawned this agent'
+                          }
+                        >
+                          {step.origin.kind === 'peer' ? 'another session' : 'coordinator'}
+                        </span>
+                      </span>
+                    )}
+                    {/* The other half of the same exchange, on the sending row. */}
+                    {target && (
+                      <span className="step-peer-ref">
+                        <span className="step-peer-name">→ {target.to}</span>
+                        <span
+                          className="step-peer-kind"
+                          title={
+                            target.kind === 'peer'
+                              ? 'Delivered to an independent Claude session on this machine'
+                              : target.kind === 'subagent'
+                                ? "Delivered to this session's own sub-agent"
+                                : 'Recipient could not be identified from the transcript'
+                          }
+                        >
+                          {target.kind === 'peer'
+                            ? 'another session'
+                            : target.kind === 'subagent'
+                              ? 'own sub-agent'
+                              : 'unresolved'}
+                        </span>
+                        {targetSpawnKey !== undefined && onGoToStep && (
+                          <button
+                            className="step-peer-jump"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onGoToStep(targetSpawnKey);
+                            }}
+                            title="Go to the call that spawned this agent"
+                          >
+                            spawned at #{targetSpawnKey}
+                          </button>
+                        )}
+                      </span>
                     )}
                     {linkedAgents && linkedAgents.length > 0 && (
                       <>
@@ -1319,6 +1441,27 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, highlightS
                         >
                           <ContentRenderer step={step} meta={usageNode} />
                         </RendererErrorBoundary>
+                      </div>
+                    )}
+
+                    {/* Which session this came from. Resolved here rather than
+                      on the row: the fallback reads every transcript looking
+                      for the message id, so it waits until someone opens the
+                      step and asks. */}
+                    {step.origin?.kind === 'peer' && (
+                      <div className="detail-section step-peer-source">
+                        {step.origin.msgId && (
+                          <span className="tr-meta tr-mono" title="Recorded by the sending session too">
+                            {step.origin.msgId}
+                          </span>
+                        )}
+                        <PeerSessionLink
+                          query={{
+                            msgId: step.origin.msgId,
+                            name: step.origin.name,
+                            pid: step.origin.pid,
+                          }}
+                        />
                       </div>
                     )}
 

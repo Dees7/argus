@@ -46,6 +46,7 @@ interface Props {
 const KIND_LABEL: Record<string, string> = {
   compact: 'Compaction Summary',
   user: 'User Prompt',
+  peer_message: 'Message Received',
 };
 
 // pretty = markdown, raw = verbatim with horizontal scroll, wrap = raw with

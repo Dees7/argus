@@ -314,6 +314,16 @@ export class DiscoveryService {
   }
 
   /**
+   * Where a session ran — for callers that need to name one they found rather
+   * than open it. Both fields can be '' for a session whose transcript never
+   * recorded a cwd.
+   */
+  getSessionLocation(sessionId: string): { project: string; projectPath: string } | undefined {
+    const ds = this.sessionIndex.get(sessionId);
+    return ds ? { project: ds.project, projectPath: ds.projectPath } : undefined;
+  }
+
+  /**
    * Every discovered session paired with the transcript files that make it up.
    * Both whole-session passes — full-text search and pricing — work from this,
    * so neither has to know that a session is more than one file.

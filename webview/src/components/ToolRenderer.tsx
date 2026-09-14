@@ -5,6 +5,7 @@ import { Attachment, Step } from '../types/session';
 import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { parseAskUserQuestion } from './askUserQuestion';
+import PeerSessionLink from './PeerSessionLink';
 import { ResultBlocksRenderer, ToolSearchRenderer, asResultBlocks } from './resultBlocks';
 import 'highlight.js/styles/github-dark.css';
 import './ToolRenderer.css';
@@ -475,6 +476,65 @@ const TaskRenderer = ({ input, result }: { input: any; result: any }) => {
   );
 };
 
+/**
+ * A message sent to another agent — and, above all, *which* other agent.
+ *
+ * The call itself looks the same either way (`to` is an opaque string), so the
+ * channel comes off the step, where the parser worked it out from the result:
+ * a sub-agent send resumes an agent of this session, a peer send queues a
+ * message in a session running next door. The message id is shown for a peer
+ * because it is what the receiving transcript records too — the string to
+ * search for when the link below can no longer find the session.
+ */
+const SendMessageRenderer = ({ input, step }: { input: any; result: any; step?: Step }) => {
+  const to: string = typeof input?.to === 'string' ? input.to : '';
+  const summary: string = typeof input?.summary === 'string' ? input.summary : '';
+  const body: string = typeof input?.message === 'string' ? input.message : '';
+  const target = step?.messageTarget;
+  const isPeer = target?.kind === 'peer';
+
+  return (
+    <div className="tr-block">
+      <div className="tr-task-header">
+        <span className="tr-task-type">→ {to || '(no recipient)'}</span>
+        {target && (
+          <span className={`tr-badge tr-badge-${isPeer ? 'info' : 'success'}`}>
+            {isPeer ? 'another session' : target.kind === 'subagent' ? 'own sub-agent' : 'unresolved'}
+          </span>
+        )}
+        {target?.subscribeOnly && (
+          <span className="tr-badge tr-badge-info" title="Idle subscription — nothing was delivered">
+            subscribe only
+          </span>
+        )}
+      </div>
+      {target && (target.agentId || target.msgId) && (
+        <div className="tr-task-meta">
+          {target.agentId && <span className="tr-meta tr-mono">{target.agentId}</span>}
+          {target.msgId && (
+            <span className="tr-meta tr-mono" title="Recorded by the receiving session too">
+              {target.msgId}
+            </span>
+          )}
+          {isPeer && <PeerSessionLink query={{ msgId: target.msgId, name: target.to }} />}
+        </div>
+      )}
+      {summary && (
+        <div className="tr-task-prompt">
+          <div className="tr-section-label">Summary</div>
+          <pre className="tr-text">{summary}</pre>
+        </div>
+      )}
+      {body && (
+        <div className="tr-task-prompt">
+          <div className="tr-section-label">Message</div>
+          <pre className="tr-text">{body}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TodoWriteRenderer = ({ input }: { input: any; result: any }) => {
   const todos: any[] = input?.todos || [];
   return (
@@ -693,7 +753,10 @@ const formatDuration = (ms: number): string => {
 };
 
 // ─── Dispatcher ───────────────────────────────────────────────────────────
-const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Element> = {
+// `step` is passed to every renderer and read by the few that need more than
+// the call itself — `SendMessage` wants the channel the parser worked out from
+// the result, which no renderer should have to re-derive.
+const RENDERERS: Record<string, (props: { input: any; result: any; step?: Step }) => JSX.Element> = {
   Read: ReadRenderer,
   Write: WriteRenderer,
   Edit: EditRenderer,
@@ -703,6 +766,7 @@ const RENDERERS: Record<string, (props: { input: any; result: any }) => JSX.Elem
   Glob: GlobRenderer,
   Task: TaskRenderer,
   Agent: TaskRenderer,
+  SendMessage: SendMessageRenderer,
   TodoWrite: TodoWriteRenderer,
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,
@@ -850,7 +914,7 @@ const ToolRenderer = ({ step, meta }: ToolRendererProps) => {
 
       {active === 'pretty' ? (
         <>
-          {Renderer && <Renderer input={step.toolInput} result={parsed.value} />}
+          {Renderer && <Renderer input={step.toolInput} result={parsed.value} step={step} />}
           {attachments.length > 0 && (
             <Attachments attachments={attachments} agentId={step.agentId} />
           )}

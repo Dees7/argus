@@ -121,6 +121,12 @@ export type StepType =
   | 'subagent'
   | 'compact'
   | 'user'
+  // A message another agent sent into this session mid-run: a peer session
+  // writing over the local socket, or a coordinator instructing the sub-agent
+  // whose transcript this is. It drives the next turn exactly as a typed
+  // prompt does, so it is a step of its own rather than a harness event — see
+  // `StepOrigin`.
+  | 'peer_message'
   // An event that carries a blob and nothing the timeline renders — a queued
   // paste, an unrecognised message shape. The step exists to keep the
   // attachment reachable.
@@ -192,6 +198,49 @@ export interface StepPermission {
   hookName?: string;
 }
 
+/**
+ * Who sent an inbound message, when it was not the person at the keyboard.
+ * Set on `peer_message` steps only, straight from the transcript's `origin`
+ * record (`kind: "human"` is every ordinary turn and gets no step of this type).
+ *
+ * The two kinds are two different channels, not two spellings of one:
+ * `coordinator` is the session that spawned this agent talking down to it,
+ * `peer` is an independent Claude session on the same machine talking across.
+ */
+export interface StepOrigin {
+  kind: 'peer' | 'coordinator';
+  /** Peer only: the sender's session name at send time (`marketplace-dc`). */
+  name?: string;
+  /** Peer only: pid of the sending process, as the receiver verified it. */
+  pid?: number;
+  /**
+   * Both ends of a cross-session message record the same id — the sender in its
+   * `SendMessage` result, the receiver here. It is the only durable link
+   * between the two transcripts, and it outlives both processes.
+   */
+  msgId?: string;
+  /** How the peer was running when it sent (`prompting`, …). */
+  mode?: string;
+}
+
+/**
+ * Where a `SendMessage` call went. The tool addresses both channels, and the
+ * call itself barely differs — `to` is an opaque string either way — so the
+ * classification comes from the result: a sub-agent send resumes an agent and
+ * echoes its id, a peer send reports a queued message and its `msg_id`.
+ */
+export interface StepMessageTarget {
+  kind: 'subagent' | 'peer' | 'unknown';
+  /** `input.to` verbatim: an agent id, a session name, a teammate name. */
+  to: string;
+  /** Sub-agent sends: the id the result resumed, which matches `SubagentInfo.agentId`. */
+  agentId?: string;
+  /** Peer sends: pairs with the receiving session's `StepOrigin.msgId`. */
+  msgId?: string;
+  /** `notify_when_idle` with no message — a subscription, nothing was delivered. */
+  subscribeOnly?: boolean;
+}
+
 export interface Step {
   index: number;
   type: StepType;
@@ -234,6 +283,10 @@ export interface Step {
   // Set when `cost` was derived from fallback pricing (unrecognised model id).
   costIsEstimate?: boolean;
   model?: string;
+  /** Set on `peer_message` steps only — who sent it. See `StepOrigin`. */
+  origin?: StepOrigin;
+  /** Set on `SendMessage` tool calls only — where it went. See `StepMessageTarget`. */
+  messageTarget?: StepMessageTarget;
   agentId?: string;
   globalIndex?: number;
 }

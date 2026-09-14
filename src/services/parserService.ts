@@ -7,6 +7,8 @@ import {
   HistoryEntry,
   SessionDetail,
   Step,
+  StepMessageTarget,
+  StepOrigin,
   StepPermission,
   SubagentInfo,
   calculateCost,
@@ -693,6 +695,17 @@ export class ParserService {
       // just because the message around it renders to nothing.
       const blobs = this.collectEventAttachments(event);
 
+      // A message another agent sent in. The harness files it as a meta user
+      // event — the same class as the IDE notices that are rightly dropped
+      // below — but this one is a turn: the model read it and acted on it, and
+      // without a step the timeline shows a change of course with no cause.
+      if (event.type === 'user' && this.messageOrigin(event)) {
+        const step = this.buildPeerMessageStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // What the user actually typed. Tool results ride on user events too,
       // so they are filtered out — by `toolUseResult` where it is present, and
       // by the content shape for the sub-agent transcripts that omit it.
@@ -1043,6 +1056,16 @@ export class ParserService {
             }
             steps[toolStep.index].toolSuccess = !isError;
 
+            // One tool, two channels: `to` is an opaque string whether the
+            // message went to this session's own sub-agent or to an
+            // independent session next door. Only the result tells them apart.
+            if (steps[toolStep.index].toolName === 'SendMessage') {
+              steps[toolStep.index].messageTarget = this.messageTargetOf(
+                steps[toolStep.index].toolInput,
+                result
+              );
+            }
+
             // Why the call never ran, when it did not. `toolDenialKind` names
             // the source outright; older transcripts only have the sentence the
             // model was shown, which says a call was refused but not by whom —
@@ -1123,6 +1146,129 @@ export class ParserService {
       filesWritten: Array.from(filesWritten),
       toolsUsed: Object.fromEntries(toolsUsed),
     };
+  }
+
+  /**
+   * Which channel a `SendMessage` used, read off its result.
+   *
+   *  - a sub-agent send **resumes** an agent: `resumedAgentId` (and `pin.id`)
+   *    name the agent, and it matches a `SubagentInfo.agentId` of this session;
+   *  - a cross-session send **queues** a message: `msg_id` is the id both
+   *    transcripts record, and the only thing linking the two sessions once
+   *    both processes are gone.
+   *
+   * A result in neither shape — an older transcript, a delivery that failed —
+   * stays `unknown`, and `linkMessagesToAgents` gets a second chance at it once
+   * the session's agents are known.
+   */
+  private messageTargetOf(input: any, result: unknown): StepMessageTarget | undefined {
+    const to = typeof input?.to === 'string' ? input.to.trim() : '';
+    if (!to) {
+      return undefined;
+    }
+
+    let body: any = result;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = undefined;
+      }
+    }
+
+    const agentId =
+      typeof body?.resumedAgentId === 'string'
+        ? body.resumedAgentId
+        : typeof body?.pin?.id === 'string'
+          ? body.pin.id
+          : undefined;
+    const msgId = typeof body?.msg_id === 'string' ? body.msg_id : undefined;
+    // A subscription with no message costs the other session nothing and
+    // delivers nothing — worth saying so rather than showing an empty body.
+    const subscribeOnly = input?.notify_when_idle === true && !input?.message;
+
+    return {
+      kind: agentId ? 'subagent' : msgId ? 'peer' : 'unknown',
+      to,
+      agentId,
+      msgId,
+      subscribeOnly: subscribeOnly || undefined,
+    };
+  }
+
+  /**
+   * Sender of an inbound message, for the events that carry one. Ordinary
+   * turns are `{kind: "human"}` and return nothing — they belong to the user
+   * branch, not here.
+   *
+   * The receiving side is the only place a cross-session message is recorded
+   * in full: `body` is the text without the harness's wrapper, `msg_id` is the
+   * same id the sender's `SendMessage` result reported, and `verifiedPeerPid`
+   * is the pid the receiver checked rather than a name the sender claimed.
+   */
+  private messageOrigin(event: any): StepOrigin | null {
+    const origin = event?.origin;
+    const kind = origin?.kind;
+    if (kind !== 'peer' && kind !== 'coordinator') {
+      return null;
+    }
+
+    return {
+      kind,
+      name: typeof origin.name === 'string' ? origin.name : undefined,
+      pid: typeof origin.verifiedPeerPid === 'number' ? origin.verifiedPeerPid : undefined,
+      msgId: typeof origin.msg_id === 'string' ? origin.msg_id : undefined,
+      mode: typeof origin.fromMode === 'string' ? origin.fromMode : undefined,
+    };
+  }
+
+  /**
+   * Step for a message another agent sent into this session.
+   *
+   * `origin.body` is the message as sent; the event's own content is the same
+   * text under a wrapper telling the model who it came from, so it is only the
+   * fallback — and then the wrapper is cut, since the step's badge already says
+   * who sent it.
+   */
+  private buildPeerMessageStep(event: RawEvent, index: number): Step | null {
+    const origin = this.messageOrigin(event);
+    if (!origin) {
+      return null;
+    }
+
+    const body = typeof (event as any).origin?.body === 'string' ? (event as any).origin.body : '';
+    const content = (body || this.stripMessageWrapper(this.extractTextContent(event.message?.content))).trim();
+    if (!content) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'peer_message',
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: event.message?.id ?? '',
+      content,
+      origin,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Drop the harness's framing from an inbound message: the line naming the
+   * sender and, for a peer, the `<cross-session-message>` element around the
+   * body. Both are addressed to the model, not to a reader of the timeline.
+   */
+  private stripMessageWrapper(text: string): string {
+    // A peer's message is an element, and the paragraph after it is the
+    // harness reminding the model how to treat what it just read — so the
+    // element's contents are the whole of the message.
+    const element = text.match(/<cross-session-message\b[^>]*>([\s\S]*?)<\/cross-session-message>/i);
+    if (element) {
+      return element[1].trim();
+    }
+
+    return text.replace(/^[^\n]*sent (?:a )?message[^\n]*:\s*/i, '').trim();
   }
 
   /**
@@ -1769,6 +1915,55 @@ export class ParserService {
       } catch {
         // ignore unparseable results
       }
+    }
+  }
+
+  /**
+   * Second pass over `SendMessage` steps, once the session's agents are known.
+   *
+   * A send whose result named no agent and no message id is still a send to a
+   * sub-agent when `to` is one of this session's agents — which is how a
+   * transcript from before the result carried either reads, and how a send
+   * addressed by the agent's short ref reads today. Anything that matches no
+   * agent is left `unknown`: a name that resolves to nothing here is a peer
+   * whose result went missing, not a licence to guess.
+   */
+  linkMessagesToAgents(steps: Step[], subagents: SubagentInfo[]): void {
+    const agentIds = new Set<string>();
+    for (const sub of subagents) {
+      agentIds.add(sub.agentId);
+      for (const step of sub.steps) {
+        this.resolveMessageTarget(step, agentIds, subagents);
+      }
+    }
+
+    for (const step of steps) {
+      this.resolveMessageTarget(step, agentIds, subagents);
+    }
+  }
+
+  private resolveMessageTarget(
+    step: Step,
+    agentIds: Set<string>,
+    subagents: SubagentInfo[]
+  ): void {
+    const target = step.messageTarget;
+    if (!target || target.kind !== 'unknown') {
+      return;
+    }
+
+    if (agentIds.has(target.to)) {
+      target.kind = 'subagent';
+      target.agentId = target.to;
+      return;
+    }
+
+    // `to` may be a prefix — a listing shows agents by a short ref, and a send
+    // is allowed to use it. Only an unambiguous prefix resolves.
+    const matches = subagents.filter(sub => sub.agentId.startsWith(target.to));
+    if (target.to.length >= 6 && matches.length === 1) {
+      target.kind = 'subagent';
+      target.agentId = matches[0].agentId;
     }
   }
 

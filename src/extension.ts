@@ -6,6 +6,7 @@ import { ParserService } from './services/parserService';
 import { AnalyzerService } from './services/analyzerService';
 import { SearchService } from './services/searchService';
 import { CostService, COST_TTL_MS } from './services/costService';
+import { PeerSessionService } from './services/peerSessionService';
 import { SessionWebviewProviderReact } from './providers/sessionWebviewProviderReact';
 import { SessionListViewProvider } from './providers/sessionListViewProvider';
 import { DatePickerPanel } from './providers/datePickerPanel';
@@ -37,6 +38,10 @@ export function activate(context: vscode.ExtensionContext) {
   const analyzerService = new AnalyzerService();
   const searchService = new SearchService();
   const costService = new CostService();
+  // Finds the session on the other end of a cross-session message: the live
+  // registry first, the transcripts (via the same full-text search the session
+  // list uses) for sessions that have since exited.
+  const peerSessionService = new PeerSessionService(discoveryService, searchService);
 
   // Initialize providers
   const webviewProvider = new SessionWebviewProviderReact(
@@ -44,6 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
     discoveryService,
     parserService,
     analyzerService,
+    peerSessionService,
     archivedSessions
   );
 

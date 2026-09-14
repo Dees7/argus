@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { ParserService } from '../services/parserService';
 import { AnalysisOptions, AnalyzerService } from '../services/analyzerService';
 import { DiscoveryService } from '../services/discoveryService';
+import { PeerSessionService } from '../services/peerSessionService';
 import { SessionDetail } from '../types/models';
 
 /**
@@ -37,6 +38,7 @@ export class SessionWebviewProviderReact {
     private discoveryService: DiscoveryService,
     private parserService: ParserService,
     private analyzerService: AnalyzerService,
+    private peerSessionService: PeerSessionService,
     private archivedSessions?: { isArchived(sessionId: string): boolean }
   ) {
     // Push settings.json edits into already-open sessions; otherwise a changed
@@ -161,6 +163,50 @@ export class SessionWebviewProviderReact {
           case 'saveAttachment':
             await this.saveAttachment(sessionId, message.id, message.agentId, message.name);
             break;
+          // Where a cross-session message went. Asked for one row at a time,
+          // as it is opened, and answered from the live registry alone unless
+          // `deep` says the user asked for the full-corpus search by hand.
+          case 'resolvePeerSession': {
+            const peer = await this.peerSessionService.resolve({
+              pid: typeof message.pid === 'number' ? message.pid : undefined,
+              name: typeof message.name === 'string' ? message.name : undefined,
+              msgId: typeof message.msgId === 'string' ? message.msgId : undefined,
+              deep: message.deep === true,
+              selfSessionId: sessionId,
+            });
+            panel.webview.postMessage({
+              type: 'peerSessionResolved',
+              key: message.key,
+              found: !!peer,
+              sessionId: peer?.sessionId,
+              cwd: peer?.cwd,
+              name: peer?.name,
+              via: peer?.via,
+            });
+            break;
+          }
+          // Opening is always worth the full search: the click is the user
+          // saying they want that session, whatever it takes to find it.
+          case 'openPeerSession': {
+            const peer = await this.peerSessionService.resolve({
+              pid: typeof message.pid === 'number' ? message.pid : undefined,
+              name: typeof message.name === 'string' ? message.name : undefined,
+              msgId: typeof message.msgId === 'string' ? message.msgId : undefined,
+              deep: true,
+              selfSessionId: sessionId,
+            });
+            if (peer) {
+              await vscode.commands.executeCommand('argus.openSessionDetail', peer.sessionId);
+            } else {
+              // Nothing to open is a normal outcome — the peer may have run
+              // under a config directory this window never scans — so it is
+              // stated rather than thrown.
+              vscode.window.showInformationMessage(
+                'Argus: the session on the other end of this message was not found. It has exited and its transcript is not among the scanned projects.'
+              );
+            }
+            break;
+          }
           case 'setTabsCollapsed':
             await this.setCollapsed(TABS_COLLAPSED_KEY, message.collapsed === true);
             break;
@@ -687,6 +733,10 @@ export class SessionWebviewProviderReact {
       // Link each subagent to the Task tool_use step that spawned it so the
       // webview can interleave its steps inline in the timeline.
       this.parserService.linkSubagentsToParents(session.steps, subagents);
+      // Same idea one level down: a `SendMessage` the parser could not place
+      // is matched against the agents now that they are known, so a row can
+      // say whether it went to one of them or to another session entirely.
+      this.parserService.linkMessagesToAgents(session.steps, subagents);
       console.log('✅ Subagents parsed:', subagents.length);
 
       // Run analysis

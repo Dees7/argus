@@ -306,6 +306,7 @@
 .step-icon-compact { color: #C8956A; }
 .step-icon-user    { color: #7EA6D9; }
 .step-icon-attachment { color: #9BB0C4; }
+.step-icon-peer    { color: #C586C0; }
 .step-icon-ask     { color: #D9B36C; }
 .step-icon-system  { color: var(--status-error); }
 .step-icon-system-notice { color: var(--text-dim); }
@@ -407,6 +408,26 @@
 }
 
 .step-item-user .step-summary {
+  color: var(--text);
+}
+
+/* A turn that arrived from another agent. Painted like a user turn, because
+   that is what it is to this session — the thing that made it act — but in the
+   accent the agent chips already use, so "someone else" reads at a glance. */
+.step-item-peer {
+  background: color-mix(in srgb, var(--chart-3, #C586C0) 7%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-3, #C586C0);
+}
+
+.step-item-peer:hover {
+  background: color-mix(in srgb, var(--chart-3, #C586C0) 11%, transparent);
+}
+
+.step-item-peer .step-type {
+  color: var(--chart-3, #C586C0);
+}
+
+.step-item-peer .step-summary {
   color: var(--text);
 }
 
@@ -944,6 +965,60 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+/* Who a message came from or went to, on the row itself: name, then the
+   channel it used. Same shape as `.step-agent-ref` so a timeline carrying both
+   reads as one thing. */
+.step-peer-ref {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.step-peer-name {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chart-3, #C586C0);
+  white-space: nowrap;
+}
+
+.step-peer-kind {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  border-radius: 3px;
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.step-peer-jump {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  background: transparent;
+  color: var(--chart-3, #C586C0);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.step-peer-jump:hover {
+  background: color-mix(in srgb, var(--chart-3, #C586C0) 12%, transparent);
+}
+
+/* The message id and the link to the session on the other end, under an
+   opened inbound message. */
+.step-peer-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .step-task-toggle {

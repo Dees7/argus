@@ -443,6 +443,7 @@ function App() {
             hideControls={searchCollapsed}
             onFilteredCountChange={setStepsFilteredCount}
             onRevealControls={revealSearch}
+            onGoToStep={goToStep}
             language={language}
           />
         )}
