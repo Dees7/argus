@@ -904,6 +904,27 @@
   margin-left: calc(var(--tree-shift) * var(--depth, 1));
 }
 
+/* Trunk of an ancestor agent passing straight through a nested agent's row —
+   the ancestor has rows both above and below, so its line must not break
+   here. Spans the whole card, header and details alike. The card is shifted
+   by its own depth, so the ancestor's trunk (at `--level`) moves back by the
+   difference in shifts to stay on the same x as in the ancestor's rows. */
+.step-item.step-item-agent {
+  position: relative;
+}
+
+.step-tree-pass {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--tree-step) * var(--level) - var(--tree-shift) * (var(--depth) - var(--level)));
+  width: 2px;
+  background: var(--status-warning, #d4a72c);
+  opacity: 0.7;
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* Identity of the row — which agent ran it — so it never wraps or shrinks:
    the only part of .step-left allowed to give up width is .step-summary,
    which already truncates with an ellipsis. */

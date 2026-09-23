@@ -981,6 +981,43 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     return result;
   }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents, agentChain]);
 
+  // Tree shape of the list, per row. An agent's run is the stretch of rows
+  // that belong to it or to the agents it spawned, so a nested agent's steps
+  // no longer break its parent's trunk: the parent's row before them keeps a
+  // full line, and the rows of the nested agent carry pass-through lines for
+  // every ancestor whose own rows sit both above and below them.
+  //   first/last — the row opens/closes its agent's run (display order)
+  //   pass       — depths of ancestor trunks drawn straight through the row
+  const treeShape = useMemo(() => {
+    const chains = filteredSteps.map(s =>
+      s.agentId ? agentChain.get(s.agentId) ?? [s.agentId] : []
+    );
+    // For each row and each agent in its chain: whether a row of that agent
+    // lies on the given side without leaving the agent's subtree.
+    const scan = (order: number[]) => {
+      const seen = new Map<string, boolean>();
+      const out: Set<string>[] = [];
+      for (const i of order) {
+        const chain = chains[i];
+        for (const id of [...seen.keys()]) if (!chain.includes(id)) seen.delete(id);
+        out[i] = new Set(chain.filter(id => seen.has(id)));
+        if (chain.length) seen.set(chain[0], true);
+      }
+      return out;
+    };
+    const idx = filteredSteps.map((_, i) => i);
+    const before = scan(idx);
+    const after = scan([...idx].reverse());
+    return chains.map((chain, i) => {
+      if (!chain.length) return { first: false, last: false, pass: [] as number[] };
+      const pass: number[] = [];
+      for (let k = 1; k < chain.length; k++) {
+        if (before[i].has(chain[k]) && after[i].has(chain[k])) pass.push(chain.length - k);
+      }
+      return { first: !before[i].has(chain[0]), last: !after[i].has(chain[0]), pass };
+    });
+  }, [filteredSteps, agentChain]);
+
   // Publish the filtered count for the tab header. Filters live only as long as
   // this component, so unmounting resets the header back to the plain total.
   useEffect(() => {
@@ -1285,13 +1322,10 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
             // Tree-style connector positioning: the connector is owned by the
             // agent rows themselves — line begins at the first agent step's
             // top edge and terminates at the last with an "└" corner.
-            const prev = i > 0 ? filteredSteps[i - 1] : undefined;
-            const next = i + 1 < filteredSteps.length ? filteredSteps[i + 1] : undefined;
             const isAgent = !!step.agentId;
-            const isFirstAgentInRun =
-              isAgent && (!prev || prev.agentId !== step.agentId);
-            const isLastAgentInRun =
-              isAgent && (!next || next.agentId !== step.agentId);
+            const shape = treeShape[i];
+            const isFirstAgentInRun = shape.first;
+            const isLastAgentInRun = shape.last;
             // Nesting level drives the indent and connector offsets in CSS:
             // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
             const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
@@ -1317,6 +1351,13 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                   isLastAgentInRun ? 'step-agent-last' : '',
                 ].filter(Boolean).join(' ')}
               >
+                {shape.pass.map(level => (
+                  <span
+                    key={level}
+                    className="step-tree-pass"
+                    style={{ '--level': String(level) } as React.CSSProperties}
+                  />
+                ))}
                 <button className="step-header" onClick={() => toggleStep(k)}>
                   {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
                   <div className="step-left">
