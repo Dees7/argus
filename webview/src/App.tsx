@@ -90,6 +90,28 @@ function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  // A link in a message points at a file the way the session saw it —
+  // relative to its cwd — and the webview resolves it against its own
+  // `vscode-webview://` origin instead, where nothing is. So a click on a
+  // local link goes to the host, which knows the cwd and owns the editor.
+  // The raw attribute is sent, not `a.href`: that one is already resolved
+  // against the wrong base. Web links and `#` anchors are left alone.
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.('.cr-pretty a[href]');
+      const href = a?.getAttribute('href') || '';
+      // A scheme is two letters or more, so `C:\…` still counts as a path.
+      const web = /^[a-z][\w+.-]+:/i.test(href) && !/^file:/i.test(href);
+      if (!href || href.startsWith('#') || web) {
+        return;
+      }
+      e.preventDefault();
+      window.vscodeApi?.postMessage({ type: 'openLink', href });
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
   // Hooks must run unconditionally on every render (Rules of Hooks). Compute
   // the flattened timeline before any early returns.
   //

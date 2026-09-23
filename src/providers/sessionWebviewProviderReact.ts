@@ -207,6 +207,9 @@ export class SessionWebviewProviderReact {
             }
             break;
           }
+          case 'openLink':
+            await this.openLink(sessionData.project, message.href);
+            break;
           case 'setTabsCollapsed':
             await this.setCollapsed(TABS_COLLAPSED_KEY, message.collapsed === true);
             break;
@@ -459,6 +462,64 @@ export class SessionWebviewProviderReact {
       });
     } catch (err) {
       console.error('Failed to read directory tree:', err);
+    }
+  }
+
+  /**
+   * Open a local link from a message. The session wrote it relative to its
+   * own cwd (`issues/x/README.md`, `src/a.ts#L42-L51`), which is not the
+   * window's workspace, so it is resolved here against the session's cwd.
+   * The session transcript is left as it was. Opening a file is read-only,
+   * but the href comes from the transcript, so a path that doesn't resolve
+   * to something on disk is reported and nothing else is done.
+   */
+  private async openLink(cwd: string, href: unknown): Promise<void> {
+    if (typeof href !== 'string' || !href) {
+      return;
+    }
+    const [rawPath, fragment = ''] = href.split('#', 2);
+    let target: string;
+    try {
+      target = /^file:/i.test(rawPath) ? vscode.Uri.parse(rawPath).fsPath : decodeURI(rawPath);
+    } catch {
+      target = rawPath;
+    }
+    if (target === '~' || target.startsWith('~/')) {
+      target = path.join(os.homedir(), target.slice(1));
+    } else if (!path.isAbsolute(target)) {
+      if (!cwd) {
+        vscode.window.showWarningMessage(`Argus: cannot open ${href}: the session's working directory is unknown.`);
+        return;
+      }
+      target = path.resolve(cwd, target);
+    }
+
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(target);
+    } catch {
+      vscode.window.showWarningMessage(`Argus: ${target} does not exist.`);
+      return;
+    }
+    const uri = vscode.Uri.file(target);
+    if (stat.isDirectory()) {
+      await vscode.commands.executeCommand('revealFileInOS', uri);
+      return;
+    }
+
+    // `#L42` or `#L42-L51`, the form the Claude Code prompt asks for.
+    const lines = /^L(\d+)(?:-L?(\d+))?$/.exec(fragment);
+    let selection: vscode.Range | undefined;
+    if (lines) {
+      const start = Math.max(0, Number(lines[1]) - 1);
+      const end = Math.max(start, Number(lines[2] ?? lines[1]) - 1);
+      selection = new vscode.Range(start, 0, end, Number.MAX_SAFE_INTEGER);
+    }
+    try {
+      await vscode.commands.executeCommand('vscode.open', uri, { selection, preview: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Argus: could not open ${target}: ${msg}`);
     }
   }
 
