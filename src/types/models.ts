@@ -203,12 +203,17 @@ export interface StepPermission {
  * Set on `peer_message` steps only, straight from the transcript's `origin`
  * record (`kind: "human"` is every ordinary turn and gets no step of this type).
  *
- * The two kinds are two different channels, not two spellings of one:
- * `coordinator` is the session that spawned this agent talking down to it,
- * `peer` is an independent Claude session on the same machine talking across.
+ * The kinds are different channels, not spellings of one: `coordinator` is
+ * the session that spawned this agent talking down to it, `peer` is an
+ * independent Claude session on the same machine talking across, `subagent`
+ * is this session's own sub-agent handing its final report back up. The
+ * harness files a hand-back as `kind: "peer"` with `handback: true`; it is
+ * reclassified here because its sender is an agent of this very session.
  */
 export interface StepOrigin {
-  kind: 'peer' | 'coordinator';
+  kind: 'peer' | 'coordinator' | 'subagent';
+  /** Sub-agent hand-backs: the sender, which matches `SubagentInfo.agentId`. */
+  agentId?: string;
   /** Peer only: the sender's session name at send time (`marketplace-dc`). */
   name?: string;
   /** Peer only: pid of the sending process, as the receiver verified it. */

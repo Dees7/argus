@@ -700,7 +700,7 @@ export class ParserService {
       // below — but this one is a turn: the model read it and acted on it, and
       // without a step the timeline shows a change of course with no cause.
       if (event.type === 'user' && this.messageOrigin(event)) {
-        const step = this.buildPeerMessageStep(event, steps.length);
+        const step = this.buildPeerMessageStep(event, event.message?.content, event, steps.length);
         if (step) {
           steps.push(step);
         }
@@ -742,7 +742,25 @@ export class ParserService {
       // missing from the timeline, image and all. The harness queues its own
       // commands the same way (background-task notifications), but those are
       // `<task-notification>` wrappers that clean away to nothing.
-      if (event.type === 'attachment' && event.attachment?.type === 'queued_command') {
+      //
+      // A message another agent sent while the turn was running is queued the
+      // same way, with the sender's `origin` on the attachment — it is that
+      // agent's words, not the user's, so it gets the same step as below.
+      if (
+        event.type === 'attachment' &&
+        event.attachment?.type === 'queued_command' &&
+        this.messageOrigin(event.attachment)
+      ) {
+        const step = this.buildPeerMessageStep(
+          event.attachment,
+          event.attachment.prompt,
+          event,
+          steps.length
+        );
+        if (step) {
+          steps.push(step);
+        }
+      } else if (event.type === 'attachment' && event.attachment?.type === 'queued_command') {
         const text = this.extractUserInput(event.attachment.prompt);
         const attachments = claimAttachments(blobs, 'attachment.prompt');
         if (text || attachments.length > 0) {
@@ -1205,12 +1223,26 @@ export class ParserService {
    * in full: `body` is the text without the harness's wrapper, `msg_id` is the
    * same id the sender's `SendMessage` result reported, and `verifiedPeerPid`
    * is the pid the receiver checked rather than a name the sender claimed.
+   *
+   * A sub-agent's final report comes in on the same channel — `kind: "peer"`,
+   * but with `handback: true` and the agent's id in `from` — and is told apart
+   * here, since its sender is an agent of this session, not a session next door.
    */
   private messageOrigin(event: any): StepOrigin | null {
     const origin = event?.origin;
     const kind = origin?.kind;
     if (kind !== 'peer' && kind !== 'coordinator') {
       return null;
+    }
+
+    if (kind === 'peer' && origin.handback === true) {
+      const agentId =
+        typeof origin.from === 'string'
+          ? origin.from
+          : typeof origin.senderTaskId === 'string'
+            ? origin.senderTaskId
+            : undefined;
+      return { kind: 'subagent', agentId };
     }
 
     return {
@@ -1229,15 +1261,27 @@ export class ParserService {
    * text under a wrapper telling the model who it came from, so it is only the
    * fallback — and then the wrapper is cut, since the step's badge already says
    * who sent it.
+   *
+   * `carrier` is whatever holds the `origin` — the event itself, or the
+   * `queued_command` attachment for a message that arrived mid-turn — and
+   * `wrapped` is the text the model was shown.
    */
-  private buildPeerMessageStep(event: RawEvent, index: number): Step | null {
-    const origin = this.messageOrigin(event);
+  private buildPeerMessageStep(
+    carrier: any,
+    wrapped: any,
+    event: RawEvent,
+    index: number
+  ): Step | null {
+    const origin = this.messageOrigin(carrier);
     if (!origin) {
       return null;
     }
 
-    const body = typeof (event as any).origin?.body === 'string' ? (event as any).origin.body : '';
-    const content = (body || this.stripMessageWrapper(this.extractTextContent(event.message?.content))).trim();
+    const body = typeof carrier?.origin?.body === 'string' ? carrier.origin.body : '';
+    let content = (body || this.stripMessageWrapper(this.extractTextContent(wrapped))).trim();
+    if (origin.kind === 'subagent') {
+      content = this.stripHandbackFrame(content);
+    }
     if (!content) {
       return null;
     }
@@ -1263,12 +1307,34 @@ export class ParserService {
     // A peer's message is an element, and the paragraph after it is the
     // harness reminding the model how to treat what it just read — so the
     // element's contents are the whole of the message.
-    const element = text.match(/<cross-session-message\b[^>]*>([\s\S]*?)<\/cross-session-message>/i);
+    const element = text.match(
+      /<(cross-session-message|agent-message)\b[^>]*>([\s\S]*?)<\/\1>/i
+    );
     if (element) {
-      return element[1].trim();
+      return element[2].trim();
     }
 
     return text.replace(/^[^\n]*sent (?:a )?message[^\n]*:\s*/i, '').trim();
+  }
+
+  /**
+   * Drop the preamble the harness puts above a sub-agent's report — a note to
+   * the model that what follows carries no user authority — and the two-space
+   * indent it adds to every line of the report so nothing inside can pass for
+   * a frame. What is left is the report as the agent wrote it.
+   */
+  private stripHandbackFrame(text: string): string {
+    const frame = text.match(/^\[Subagent hand-back\][^\n]*\n/);
+    if (!frame) {
+      return text;
+    }
+
+    return text
+      .slice(frame[0].length)
+      .split('\n')
+      .map(line => line.replace(/^ {2}/, ''))
+      .join('\n')
+      .trim();
   }
 
   /**

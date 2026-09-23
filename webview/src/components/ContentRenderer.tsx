@@ -34,6 +34,15 @@ marked.use({
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** Markdown to HTML with the same engine and highlighting as a message body. */
+export const renderMarkdown = (text: string): string => {
+  try {
+    return marked.parse(text) as string;
+  } catch {
+    return `<pre>${escapeHtml(text)}</pre>`;
+  }
+};
+
 // ─── Component ───────────────────────────────────────────────────────────
 interface Props {
   step: Step;
@@ -57,7 +66,10 @@ const ContentRenderer = ({ step, meta }: Props) => {
   const [view, setView] = useState<View>('pretty');
   const content = step.content || '';
   const kind = step.type;
-  const label = KIND_LABEL[kind];
+  // A sub-agent's hand-back arrives as a message like any other, but it is
+  // the agent's final report, not a turn of a conversation.
+  const label =
+    kind === 'peer_message' && step.origin?.kind === 'subagent' ? 'Sub-agent Report' : KIND_LABEL[kind];
 
   // Terminal output — a slash command's stdout, above all — is not Markdown:
   // its meaning is in the columns and the colours, both of which Markdown
@@ -71,11 +83,7 @@ const ContentRenderer = ({ step, meta }: Props) => {
 
   const html = useMemo(() => {
     if (!content || terminal) return '';
-    try {
-      return marked.parse(content) as string;
-    } catch {
-      return `<pre>${escapeHtml(content)}</pre>`;
-    }
+    return renderMarkdown(content);
   }, [content, terminal]);
 
   if (!content) return null;

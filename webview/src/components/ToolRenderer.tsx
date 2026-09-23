@@ -5,6 +5,7 @@ import { Attachment, Step } from '../types/session';
 import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { parseAskUserQuestion } from './askUserQuestion';
+import { renderMarkdown } from './ContentRenderer';
 import PeerSessionLink from './PeerSessionLink';
 import { ResultBlocksRenderer, ToolSearchRenderer, asResultBlocks } from './resultBlocks';
 import 'highlight.js/styles/github-dark.css';
@@ -535,6 +536,44 @@ const SendMessageRenderer = ({ input, step }: { input: any; result: any; step?: 
   );
 };
 
+/**
+ * A sub-agent's final report, sent up to the thread that spawned it. The
+ * report is the whole point of the call — the result is only the harness
+ * confirming delivery — so it is rendered as the message it becomes on the
+ * receiving side, Markdown and all. The row above links to where it arrived.
+ */
+const SubagentHandbackRenderer = ({ input, result }: { input: any; result: any; step?: Step }) => {
+  const body: string = typeof input?.message === 'string' ? input.message : '';
+  // The harness answers `{success, message}`, stored as a string of JSON.
+  const answer = useMemo(() => {
+    if (typeof result !== 'string') return result;
+    try {
+      return JSON.parse(result);
+    } catch {
+      return result;
+    }
+  }, [result]);
+  const confirmation: string =
+    typeof answer?.message === 'string' ? answer.message : typeof answer === 'string' ? answer : '';
+  const html = useMemo(() => (body ? renderMarkdown(body) : ''), [body]);
+
+  return (
+    <div className="tr-block">
+      <div className="tr-task-header">
+        <span className="tr-task-type">↩ report to caller</span>
+        <span className="tr-badge tr-badge-success">sub-agent report</span>
+        {confirmation && <span className="tr-meta">{confirmation}</span>}
+      </div>
+      {html && (
+        <div className="tr-task-prompt">
+          <div className="tr-section-label">Report</div>
+          <div className="cr-pretty" dangerouslySetInnerHTML={{ __html: html }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TodoWriteRenderer = ({ input }: { input: any; result: any }) => {
   const todos: any[] = input?.todos || [];
   return (
@@ -767,6 +806,7 @@ const RENDERERS: Record<string, (props: { input: any; result: any; step?: Step }
   Task: TaskRenderer,
   Agent: TaskRenderer,
   SendMessage: SendMessageRenderer,
+  SubagentHandback: SubagentHandbackRenderer,
   TodoWrite: TodoWriteRenderer,
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,

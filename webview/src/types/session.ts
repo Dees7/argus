@@ -66,11 +66,14 @@ export interface StepPermission {
 
 /**
  * Who sent an inbound message when it was not the user: the coordinator that
- * spawned this agent, or an independent Claude session on the same machine.
+ * spawned this agent, an independent Claude session on the same machine, or
+ * this session's own sub-agent handing back its final report.
  * Set on steps of type `peer_message`.
  */
 export interface StepOrigin {
-  kind: 'peer' | 'coordinator';
+  kind: 'peer' | 'coordinator' | 'subagent';
+  /** Sub-agent hand-backs: matches `Subagent.agentId`. */
+  agentId?: string;
   /** Peer only: the sender's session name at send time. */
   name?: string;
   /** Peer only: pid of the sending process. */

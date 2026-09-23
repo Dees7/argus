@@ -512,6 +512,59 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     return m;
   }, [subagents, allSteps, steps]);
 
+  // A sub-agent's report exists twice: as the `SubagentHandback` call in the
+  // agent's own thread, and as the message it became in the thread that
+  // spawned it — the main session, or the parent agent for a nested one. Each
+  // row links to the other. Built off `allSteps` so both ends are found in
+  // any thread and stay reachable while a filter hides one of them.
+  //
+  // An agent resumed with `SendMessage` hands back once per run, so the pair
+  // is found by the report's text first and by order among that agent's
+  // hand-backs where the text does not settle it.
+  const handbackLinks = useMemo(() => {
+    const toDelivery = new Map<number, number>();
+    const toHandback = new Map<number, number>();
+    const norm = (t: unknown) => (typeof t === 'string' ? t.replace(/\s+/g, ' ').trim() : '');
+    const calls = new Map<string, Step[]>();
+    const deliveries = new Map<string, Step[]>();
+    for (const s of allSteps ?? steps) {
+      if (s.toolName === 'SubagentHandback' && s.agentId) {
+        const arr = calls.get(s.agentId) ?? [];
+        arr.push(s);
+        calls.set(s.agentId, arr);
+      } else if (s.type === 'peer_message' && s.origin?.kind === 'subagent' && s.origin.agentId) {
+        // Only the thread the agent reports to — its parent's, or the main
+        // session's when it has none.
+        const parent = subagentById.get(s.origin.agentId)?.parentAgentId;
+        if ((s.agentId ?? undefined) !== parent) continue;
+        const arr = deliveries.get(s.origin.agentId) ?? [];
+        arr.push(s);
+        deliveries.set(s.origin.agentId, arr);
+      }
+    }
+    for (const [agentId, sent] of calls) {
+      const arrived = [...(deliveries.get(agentId) ?? [])];
+      const unmatched: Step[] = [];
+      for (const call of sent) {
+        const text = norm(call.toolInput?.message);
+        const i = text ? arrived.findIndex(d => norm(d.content) === text) : -1;
+        if (i < 0) {
+          unmatched.push(call);
+          continue;
+        }
+        toDelivery.set(keyOf(call), keyOf(arrived[i]));
+        toHandback.set(keyOf(arrived[i]), keyOf(call));
+        arrived.splice(i, 1);
+      }
+      unmatched.forEach((call, i) => {
+        if (!arrived[i]) return;
+        toDelivery.set(keyOf(call), keyOf(arrived[i]));
+        toHandback.set(keyOf(arrived[i]), keyOf(call));
+      });
+    }
+    return { toDelivery, toHandback };
+  }, [allSteps, steps, subagentById]);
+
   // agentId → itself + all ancestors, so collapsing an agent also hides the
   // agents it spawned.
   const agentChain = useMemo(() => {
@@ -609,8 +662,8 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   // the collapse sets in the dependency list would re-run the jump whenever a
   // live session appends a step, yanking the view back to a step the user
   // navigated away from minutes ago.
-  const jumpContext = useRef({ steps, isAutoExpanded, onJumpHandled });
-  jumpContext.current = { steps, isAutoExpanded, onJumpHandled };
+  const jumpContext = useRef({ steps, isAutoExpanded, onJumpHandled, agentChain });
+  jumpContext.current = { steps, isAutoExpanded, onJumpHandled, agentChain };
 
   // Jump to the requested step: paint it, force it open, and — if it belongs
   // to a sub-agent the user had collapsed — reveal that agent, or the row
@@ -625,6 +678,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
       steps: currentSteps,
       isAutoExpanded: autoExpanded,
       onJumpHandled: handled,
+      agentChain: chains,
     } = jumpContext.current;
     const target = currentSteps.find(s => keyOf(s) === stepToShow);
 
@@ -637,11 +691,14 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
       else next.add(stepToShow);
       return next;
     });
+    // A nested agent is hidden by any collapsed ancestor too, so the whole
+    // chain is opened, not just the agent the step belongs to.
     if (target?.agentId) {
+      const chain = chains.get(target.agentId) ?? [target.agentId];
       setCollapsedAgents(prev => {
-        if (!prev.has(target.agentId!)) return prev;
+        if (!chain.some(id => prev.has(id))) return prev;
         const next = new Set(prev);
-        next.delete(target.agentId!);
+        chain.forEach(id => next.delete(id));
         return next;
       });
     }
@@ -1212,6 +1269,19 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
             const targetSpawnKey = target?.agentId
               ? spawnStepByAgent.get(target.agentId)
               : undefined;
+            // A sub-agent's report, at both ends: the message links into the
+            // agent's thread, to the call that sent it, and to the call that
+            // started the agent; the call links to where the message arrived.
+            const originSpawnKey =
+              step.origin?.kind === 'subagent' && step.origin.agentId
+                ? spawnStepByAgent.get(step.origin.agentId)
+                : undefined;
+            const handbackKey = handbackLinks.toHandback.get(k);
+            const isHandback = step.toolName === 'SubagentHandback';
+            const deliveryKey = isHandback ? handbackLinks.toDelivery.get(k) : undefined;
+            const reportedTo = isHandback && ownerAgent?.parentAgentId
+              ? subagentById.get(ownerAgent.parentAgentId)
+              : undefined;
             // Tree-style connector positioning: the connector is owned by the
             // agent rows themselves — line begins at the first agent step's
             // top edge and terminates at the last with an "└" corner.
@@ -1278,22 +1348,89 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                     {/* A message that arrived from another agent: who sent it,
                       and over which channel. A coordinator is this agent's own
                       parent; a peer is a session that shares nothing with this
-                      one but the machine. */}
+                      one but the machine; a sub-agent is handing back its final
+                      report, so the row links to the call that started it. */}
                     {step.origin && (
                       <span className="step-peer-ref">
                         <span className="step-peer-name">
-                          ← {step.origin.name || (step.origin.kind === 'coordinator' ? 'coordinator' : 'peer')}
+                          ←{' '}
+                          {step.origin.kind === 'subagent'
+                            ? (step.origin.agentId && subagentById.get(step.origin.agentId)?.description) ||
+                              step.origin.agentId ||
+                              'sub-agent'
+                            : step.origin.name ||
+                              (step.origin.kind === 'coordinator' ? 'coordinator' : 'peer')}
                         </span>
                         <span
                           className="step-peer-kind"
                           title={
                             step.origin.kind === 'peer'
                               ? 'Sent by an independent Claude session on this machine'
-                              : 'Sent by the session that spawned this agent'
+                              : step.origin.kind === 'subagent'
+                                ? `Final report of this session's own sub-agent${step.origin.agentId ? ` (agent-${step.origin.agentId}.jsonl)` : ''}`
+                                : 'Sent by the session that spawned this agent'
                           }
                         >
-                          {step.origin.kind === 'peer' ? 'another session' : 'coordinator'}
+                          {step.origin.kind === 'peer'
+                            ? 'another session'
+                            : step.origin.kind === 'subagent'
+                              ? 'sub-agent report'
+                              : 'coordinator'}
                         </span>
+                        {handbackKey !== undefined && onGoToStep && (
+                          <button
+                            className="step-peer-jump"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onGoToStep(handbackKey);
+                            }}
+                            title="Go to the SubagentHandback call in the agent's own thread"
+                          >
+                            sent at #{handbackKey}
+                          </button>
+                        )}
+                        {originSpawnKey !== undefined && onGoToStep && (
+                          <button
+                            className="step-peer-jump"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onGoToStep(originSpawnKey);
+                            }}
+                            title="Go to the call that spawned this agent"
+                          >
+                            spawned at #{originSpawnKey}
+                          </button>
+                        )}
+                      </span>
+                    )}
+                    {/* The agent's side of the same report: which thread it
+                      went up to, and the row it arrived as there. */}
+                    {isHandback && (
+                      <span className="step-peer-ref">
+                        <span className="step-peer-name">
+                          →{' '}
+                          {reportedTo
+                            ? reportedTo.description || reportedTo.agentId
+                            : ownerAgent?.parentAgentId || 'main thread'}
+                        </span>
+                        <span
+                          className="step-peer-kind"
+                          title="Final report handed back to the thread that spawned this agent"
+                        >
+                          sub-agent report
+                        </span>
+                        {deliveryKey !== undefined && onGoToStep && (
+                          <button
+                            className="step-peer-jump"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onGoToStep(deliveryKey);
+                            }}
+                            title="Go to the message this report became in the receiving thread"
+                          >
+                            arrived at #{deliveryKey}
+                          </button>
+                        )}
                       </span>
                     )}
                     {/* The other half of the same exchange, on the sending row. */}
