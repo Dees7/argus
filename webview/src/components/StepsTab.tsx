@@ -111,6 +111,15 @@ const filterKeyOf = (step: Step): string =>
     : step.type);
 
 /**
+ * What the "Failed" status counts and keeps: a tool call that errored, and a
+ * harness event recording something that went wrong — a hook that fell over or
+ * blocked, a failed API request. The two record failure in different fields,
+ * and a red row the filter can't find is a failure the filter hides.
+ */
+const isFailedStep = (step: Step): boolean =>
+  step.toolSuccess === false || (step.type === 'system' && isSystemFailure(step));
+
+/**
  * A filter key as it is shown. Tool names are already their own label; a
  * `system:<kind>` becomes its header button's wording, capitalised.
  */
@@ -835,7 +844,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     };
     steps.forEach(s => {
       if (s.toolSuccess === true) counts.success++;
-      if (s.toolSuccess === false) counts.failed++;
+      if (isFailedStep(s)) counts.failed++;
       if (stepFindings.has(keyOf(s))) counts.issues++;
       const p = s.permission;
       if (!p) return;
@@ -951,7 +960,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
 
     // Status filter
     if (statusFilter === 'success') result = result.filter(s => s.toolSuccess === true);
-    if (statusFilter === 'failed') result = result.filter(s => s.toolSuccess === false);
+    if (statusFilter === 'failed') result = result.filter(isFailedStep);
     if (statusFilter === 'issues') result = result.filter(s => stepFindings.has(keyOf(s)));
     if (statusFilter === 'allowed') result = result.filter(s => s.permission?.outcome === 'allowed');
     if (statusFilter === 'denied') result = result.filter(s => s.permission?.outcome === 'denied');
