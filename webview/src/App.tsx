@@ -39,6 +39,10 @@ function App() {
   const [tabsCollapsed, setTabsCollapsed] = useState(false);
   const [searchCollapsed, setSearchCollapsed] = useState(false);
   const [idCopied, setIdCopied] = useState(false);
+  // Whether this panel follows the transcript as it grows. Per panel, owned by
+  // the host (it opens or closes the file watchers); the default comes from
+  // `argus.session.autoRefresh`.
+  const [autoRefresh, setAutoRefresh] = useState(true);
   // Which header buttons are pressed — one entry per button, not per kind, so a
   // button that covers two kinds brings both in at once (see `toggleWith` in
   // `systemSteps`). Deliberately local and deliberately not persisted: reading
@@ -75,6 +79,8 @@ function App() {
         // Unlike the flags above, absence is meaningful here (system locale),
         // so every config message sets it — including back to undefined.
         setLanguage(typeof message.data?.language === 'string' ? message.data.language : undefined);
+      } else if (message.type === 'autoRefresh') {
+        setAutoRefresh(message.enabled === true);
       } else if (message.type === 'directoryTree') {
         setMapCwd(message.cwd || '');
         setMapEntries(Array.isArray(message.entries) ? message.entries : []);
@@ -247,6 +253,14 @@ function App() {
     window.vscodeApi?.postMessage({ type: 'setSearchCollapsed', collapsed: false });
   };
 
+  // Flip locally so the button greys out on the click, not after the round
+  // trip; the host confirms with an `autoRefresh` message of its own.
+  const toggleAutoRefresh = () => {
+    const enabled = !autoRefresh;
+    setAutoRefresh(enabled);
+    window.vscodeApi?.postMessage({ type: 'setAutoRefresh', enabled });
+  };
+
   // Nothing is sent to the host here: these live and die with the panel.
   const toggleSystemKind = (toggle: string) => {
     setVisibleSystemToggles(prev => {
@@ -269,9 +283,32 @@ function App() {
   return (
     <div className="app">
       <div className="detail-header">
-        <h2 title={session.prompt}>
-          {session.customTitle || session.aiTitle || session.prompt}
-        </h2>
+        <div className="detail-title-row">
+          {/* Freezes this view, not the agent: the session keeps running and
+              its transcript keeps growing, the panel just stops re-reading it.
+              Lit while live, grey while frozen. */}
+          <button
+            className={`auto-refresh-btn${autoRefresh ? ' live' : ''}`}
+            onClick={toggleAutoRefresh}
+            title={
+              autoRefresh
+                ? 'Auto-refresh on — click to freeze this view (the session itself keeps running)'
+                : 'Auto-refresh off, view frozen — click to resume live updates'
+            }
+            aria-label={autoRefresh ? 'Freeze view' : 'Resume auto-refresh'}
+            aria-pressed={autoRefresh}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.17 6.12A5.5 5.5 0 0 0 2.83 6.12" />
+              <path d="M2.83 2.9v3.22h3.2" />
+              <path d="M2.83 9.88a5.5 5.5 0 0 0 10.34 0" />
+              <path d="M13.17 13.1V9.88h-3.2" />
+            </svg>
+          </button>
+          <h2 title={session.prompt}>
+            {session.customTitle || session.aiTitle || session.prompt}
+          </h2>
+        </div>
         <div className="detail-meta">
           <span>{session.project}</span>
           <span className="meta-badge">{formatModel(session.model)}</span>

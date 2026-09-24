@@ -316,6 +316,11 @@
           "default": true,
           "description": "Show the project name in the subtitle of each session in the Sessions view."
         },
+        "argus.session.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Re-read an open session while its transcript is still being written, so the view follows a running agent. When turned off, sessions open frozen: the view shows the transcript as it was when opened and does not watch the file. Either way the refresh button before the session title freezes or resumes one session at a time; changing this setting affects sessions opened afterwards. The Sessions list keeps updating regardless."
+        },
         "argus.steps.sortOrder": {
           "type": "string",
           "default": "newest",

@@ -32,6 +32,9 @@ export class SessionWebviewProviderReact {
   private panels: Map<string, vscode.WebviewPanel> = new Map();
   private watchers: Map<string, fs.FSWatcher> = new Map();
   private subagentWatchers: Map<string, fs.FSWatcher> = new Map();
+  // A reload debounced by a watcher but not yet run. Kept per session so
+  // freezing a panel can cancel it instead of letting it land a moment later.
+  private reloadTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -94,6 +97,13 @@ export class SessionWebviewProviderReact {
       }
     );
 
+    // Whether this panel follows the transcript as it grows. Starts from the
+    // setting and is then the panel's own: the freeze button flips it for this
+    // panel only, and changing the setting affects the sessions opened next.
+    let autoRefresh = vscode.workspace
+      .getConfiguration('argus')
+      .get<boolean>('session.autoRefresh', true);
+
     // Set HTML content
     panel.webview.html = this.getWebviewContent(panel.webview);
 
@@ -109,6 +119,7 @@ export class SessionWebviewProviderReact {
       type: 'sessionData',
       data: sessionData,
     });
+    panel.webview.postMessage({ type: 'autoRefresh', enabled: autoRefresh });
 
     // Send top-level directory listing for the session cwd
     this.sendDirectoryTree(panel, sessionData.project);
@@ -127,8 +138,28 @@ export class SessionWebviewProviderReact {
               type: 'sessionData',
               data: sessionData,
             });
+            panel.webview.postMessage({ type: 'autoRefresh', enabled: autoRefresh });
             this.sendDirectoryTree(panel, sessionData.project);
             break;
+          // Frozen, the panel stops reading the transcript altogether: its
+          // watchers are closed, not just muted. The session list has a
+          // watcher of its own and keeps updating either way.
+          case 'setAutoRefresh': {
+            const enabled = message.enabled === true;
+            if (enabled === autoRefresh) {
+              break;
+            }
+            autoRefresh = enabled;
+            if (enabled) {
+              this.startWatching(sessionId, panel);
+              // Catch up on whatever was written while the panel was frozen.
+              void this.reloadPanel(sessionId, panel);
+            } else {
+              this.stopWatching(sessionId);
+            }
+            panel.webview.postMessage({ type: 'autoRefresh', enabled: autoRefresh });
+            break;
+          }
           case 'copyToClipboard':
             if (typeof message.text === 'string' && message.text) {
               await vscode.env.clipboard.writeText(message.text);
@@ -225,8 +256,11 @@ export class SessionWebviewProviderReact {
     // Track panel
     this.panels.set(panelKey, panel);
 
-    // Start watching the JSONL file for live updates
-    this.startWatching(sessionId, panel);
+    // Start watching the JSONL file for live updates, unless the panel opens
+    // frozen — then no watcher is mounted until the user unfreezes it.
+    if (autoRefresh) {
+      this.startWatching(sessionId, panel);
+    }
 
     // Clean up when panel is closed
     panel.onDidDispose(() => {
@@ -354,7 +388,6 @@ export class SessionWebviewProviderReact {
       return;
     }
 
-    let debounceTimer: NodeJS.Timeout | undefined;
     let lastSize = 0;
 
     try {
@@ -364,22 +397,19 @@ export class SessionWebviewProviderReact {
     }
 
     const triggerReload = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+      const pending = this.reloadTimers.get(sessionId);
+      if (pending) {
+        clearTimeout(pending);
       }
-      debounceTimer = setTimeout(async () => {
-        try {
-          const updatedData = await this.loadSessionData(sessionId);
-          if (updatedData) {
-            panel.webview.postMessage({
-              type: 'sessionData',
-              data: updatedData,
-            });
-          }
-        } catch (err) {
-          console.error('Error reloading session for live update:', err);
-        }
-      }, 500);
+      this.reloadTimers.set(
+        sessionId,
+        setTimeout(() => {
+          this.reloadTimers.delete(sessionId);
+          // A reload already under way when the panel gets frozen must not
+          // land after the click, so it is dropped once the watcher is gone.
+          void this.reloadPanel(sessionId, panel, () => this.watchers.has(sessionId));
+        }, 500)
+      );
     };
 
     // Lazy-mounts a watcher on the subagents/ directory for this session.
@@ -433,6 +463,29 @@ export class SessionWebviewProviderReact {
       ensureSubagentWatcher();
     } catch (err) {
       console.error('Failed to start file watcher:', err);
+    }
+  }
+
+  /**
+   * Re-read the session and push it into the panel. `stillWanted` is asked
+   * once the parse is done, since a large transcript takes a while and the
+   * panel may have been frozen in the meantime.
+   */
+  private async reloadPanel(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    stillWanted: () => boolean = () => true
+  ): Promise<void> {
+    try {
+      const updatedData = await this.loadSessionData(sessionId);
+      if (updatedData && stillWanted()) {
+        panel.webview.postMessage({
+          type: 'sessionData',
+          data: updatedData,
+        });
+      }
+    } catch (err) {
+      console.error('Error reloading session for live update:', err);
     }
   }
 
@@ -622,6 +675,11 @@ export class SessionWebviewProviderReact {
   }
 
   private stopWatching(sessionId: string): void {
+    const pending = this.reloadTimers.get(sessionId);
+    if (pending) {
+      clearTimeout(pending);
+      this.reloadTimers.delete(sessionId);
+    }
     const watcher = this.watchers.get(sessionId);
     if (watcher) {
       watcher.close();

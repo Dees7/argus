@@ -11,11 +11,44 @@
   border-bottom: 1px solid var(--border);
 }
 
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .detail-header h2 {
+  min-width: 0;
   font-size: 20px;
   font-weight: 600;
-  margin-bottom: 12px;
   color: var(--text-bright);
+}
+
+/* Auto-refresh switch before the title: accent while the view follows the
+   transcript, grey once it is frozen. */
+.auto-refresh-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+.auto-refresh-btn.live {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.auto-refresh-btn:hover {
+  background: var(--bg-panel);
+  opacity: 1;
 }
 
 .detail-meta {
