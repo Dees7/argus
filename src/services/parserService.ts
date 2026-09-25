@@ -353,6 +353,70 @@ function hookDecision(attachment: RawEvent['attachment']): StepPermission | null
   };
 }
 
+/**
+ * Hook events that belong to something else in the timeline and so get no row
+ * of their own: the tool hooks are read onto the call they fired on, or run on
+ * every call and would bury the rest, and the stop hooks are summed up by
+ * `stop_hook_summary`. Everything else — `SessionStart`, `UserPromptSubmit`,
+ * and the events no transcript of ours has shown yet — is an `event_hook`.
+ */
+const NON_EVENT_HOOKS = new Set([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'Stop',
+  'SubagentStop',
+]);
+
+function isEventHook(hookEvent: unknown): boolean {
+  return typeof hookEvent === 'string' && hookEvent !== '' && !NON_EVENT_HOOKS.has(hookEvent);
+}
+
+/**
+ * An `event_hook` row kept in parts, because its text is finished only when the
+ * context that follows a `hook_success` has been read onto it.
+ */
+interface EventHookRow {
+  step: Step;
+  /** `$ <command>`, when the hook's own run is on the record. */
+  command: string;
+  /** `exit 0`, `113ms` — what the run reported about itself. */
+  status: string[];
+  /** What the model was handed, one entry per hook, verbatim. */
+  context: string[];
+  /** Everything else the hook printed: `env` it set, stderr, non-JSON stdout. */
+  output: string[];
+}
+
+function renderEventHook(row: EventHookRow): string {
+  const status = [
+    ...row.status,
+    row.context.length > 0 ? `added ${contextSize(row.context)} of context` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return [row.command, status, ...row.context.map(text => fenced(text)), ...row.output]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/**
+ * `text` as a fenced block, so injected context shows up exactly as the model
+ * saw it: rendered as Markdown, its `<cases …>` wrappers would be swallowed as
+ * HTML tags. The fence is one backtick longer than any run inside the text.
+ */
+function fenced(text: string, lang = 'text'): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}${lang}\n${text}\n${fence}`;
+}
+
+/** `967 chars`, `12.4k chars` — how much a hook added, for the row's status line. */
+function contextSize(texts: string[]): string {
+  const chars = texts.reduce((sum, text) => sum + text.length, 0);
+  return chars < 1000 ? `${chars} chars` : `${(chars / 1000).toFixed(1)}k chars`;
+}
+
 interface QuickMetadata {
   model: string;
   firstTimestamp: string;
@@ -664,6 +728,10 @@ export class ParserService {
     // Which slash command each `local_command` invocation was, keyed by its
     // uuid, so the output event that follows can name the command it came from.
     const localCommands = new Map<string, string>();
+    // Rows for hooks that ran on a session event, keyed by their `hook_success`
+    // uuid, so the `hook_additional_context` that follows can land on the row
+    // of the hook it came from instead of standing beside it.
+    const eventHooks = new Map<string, EventHookRow>();
 
     for (const event of events) {
       // Session-level model, for display only. Costs use each message's own
@@ -829,6 +897,23 @@ export class ParserService {
       // point, so each one stays its own row.
       if (event.type === 'attachment' && event.attachment?.type === 'hook_non_blocking_error') {
         const step = this.buildHookNonBlockingErrorStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
+      // A hook that ran on a session event rather than a tool call — the
+      // `SessionStart` hooks above all, and whatever they fed the model. The
+      // added context shapes every turn after it and appears nowhere else in
+      // the timeline, and a start hook that sets up the environment can hold
+      // the first prompt back for half a minute without saying so.
+      if (
+        event.type === 'attachment' &&
+        (event.attachment?.type === 'hook_success' ||
+          event.attachment?.type === 'hook_additional_context') &&
+        isEventHook(event.attachment.hookEvent)
+      ) {
+        const step = this.addEventHook(event, steps.length, eventHooks);
         if (step) {
           steps.push(step);
         }
@@ -1423,6 +1508,128 @@ export class ParserService {
       messageId: '',
       toolUseId: typeof attachment.toolUseID === 'string' ? attachment.toolUseID : undefined,
       content: body,
+      cost: 0,
+    };
+  }
+
+  /**
+   * Step for a hook that ran on a session event (`SessionStart`,
+   * `UserPromptSubmit`, …), built from either of the two records it leaves:
+   *
+   *  - `hook_success` — the run itself: command, exit code, duration, and the
+   *    JSON it printed. `additionalContext` in that JSON is shown as the text
+   *    the model got; whatever else it set (`env`, above all) as JSON.
+   *  - `hook_additional_context` — the context as the harness injected it. When
+   *    its `parentUuid` is a `hook_success` already on the timeline it joins
+   *    that row, and the text the row already shows is not repeated; otherwise
+   *    it is a row of its own — the only record a `UserPromptSubmit` hook gets.
+   *
+   * Returns the step to append, or null when the event was folded into an
+   * existing row or carried nothing.
+   */
+  private addEventHook(
+    event: RawEvent,
+    index: number,
+    rows: Map<string, EventHookRow>
+  ): Step | null {
+    const attachment = event.attachment ?? {};
+    const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+    if (attachment.type === 'hook_additional_context') {
+      const texts = (Array.isArray(attachment.content) ? attachment.content : [attachment.content])
+        .map(text)
+        .filter(Boolean);
+      if (texts.length === 0) {
+        return null;
+      }
+      const owner = event.parentUuid ? rows.get(event.parentUuid) : undefined;
+      if (owner) {
+        const fresh = texts.filter(context => !owner.context.includes(context));
+        owner.context.push(...fresh);
+        owner.step.content = renderEventHook(owner);
+        return null;
+      }
+      const row: EventHookRow = {
+        step: this.eventHookStep(event, index, attachment.hookName ?? attachment.hookEvent),
+        command: '',
+        status: [],
+        context: texts,
+        output: [],
+      };
+      row.step.content = renderEventHook(row);
+      rows.set(event.uuid, row);
+      return row.step;
+    }
+
+    const command = text(attachment.command);
+    const stdout = text(attachment.stdout);
+    const stderr = text(attachment.stderr);
+    const exitCode = typeof attachment.exitCode === 'number' ? attachment.exitCode : undefined;
+    const durationMs =
+      typeof attachment.durationMs === 'number' ? attachment.durationMs : undefined;
+
+    // The JSON a hook answers with is read apart: the context goes where the
+    // model's view of it belongs, the rest stays JSON. A hook that printed
+    // plain text is shown as it printed it.
+    const context: string[] = [];
+    const output: string[] = [];
+    const parsed = tryParseJson(stdout);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const { hookSpecificOutput, ...rest } = parsed;
+      const specific =
+        hookSpecificOutput && typeof hookSpecificOutput === 'object' ? { ...hookSpecificOutput } : {};
+      const added = text(specific.additionalContext);
+      if (added) {
+        context.push(added);
+      }
+      delete specific.additionalContext;
+      delete specific.hookEventName;
+      const remaining =
+        Object.keys(specific).length > 0 ? { ...rest, hookSpecificOutput: specific } : rest;
+      if (Object.keys(remaining).length > 0) {
+        output.push(fenced(JSON.stringify(remaining, null, 2), 'json'));
+      }
+    } else if (stdout) {
+      output.push(fenced(stdout));
+    }
+    if (stderr) {
+      output.push(fenced(stderr));
+    }
+
+    const row: EventHookRow = {
+      step: this.eventHookStep(event, index, attachment.hookName ?? attachment.hookEvent),
+      command: command ? `$ ${command}` : '',
+      status: [
+        exitCode !== undefined ? `exit ${exitCode}` : '',
+        durationMs !== undefined ? `${durationMs}ms` : '',
+      ].filter(Boolean),
+      context,
+      output,
+    };
+    if (exitCode !== undefined && exitCode !== 0) {
+      row.step.systemSeverity = 'error';
+    }
+    row.step.content = renderEventHook(row);
+    if (!row.step.content) {
+      return null;
+    }
+    rows.set(event.uuid, row);
+    return row.step;
+  }
+
+  /** The fixed part of an `event_hook` step; its text comes from `renderEventHook`. */
+  private eventHookStep(event: RawEvent, index: number, source: unknown): Step {
+    return {
+      index,
+      type: 'system',
+      systemKind: 'event_hook',
+      // A hook doing its job is the harness working, not something going wrong.
+      systemSeverity: 'notice',
+      systemSource: typeof source === 'string' && source !== '' ? source : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      content: '',
       cost: 0,
     };
   }

@@ -106,6 +106,13 @@ export interface RawEvent {
     stdout?: string;
     /** Where the failure is spelled out; `stdout` is usually empty. */
     stderr?: string;
+
+    // `hook_additional_context` — text a hook handed the model, as the harness
+    // injected it: one string per hook, `<cases …>` wrappers and all. A
+    // `SessionStart` hook's is written right after its `hook_success`, with
+    // that event as `parentUuid`; a `UserPromptSubmit` hook gets no
+    // `hook_success` at all, so this is its only record.
+    content?: string[] | string;
   };
 
   // System-specific

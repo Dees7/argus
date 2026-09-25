@@ -9,8 +9,8 @@
  * the hooks, the retried requests and the slash commands are separate things to
  * go looking for, and one switch for the lot would be no better than none: the
  * rows you came for would arrive buried in the ones you did not. A question can
- * span kinds, though: the hooks answer theirs in three (`toggleWith` points the
- * other two at the button that owns it, and `button` names the group).
+ * span kinds, though: the hooks answer theirs in four (`toggleWith` points the
+ * other three at the button that owns it, and `button` names the group).
  *
  * Adding a kind is an entry here plus a branch in the parser. Everything that
  * renders one — the header buttons, the step icon, the row's type column —
@@ -155,7 +155,7 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     // as the rare row.
     button: {
       plural: 'hook steps',
-      hint: 'everything the hooks did — one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran',
+      hint: 'everything the hooks did — the session-start and prompt hooks with the context they added, one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran',
       Icon: HookIcon,
     },
   },
@@ -165,6 +165,14 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     plural: 'hook failures',
     hint: 'a hook exited non-zero and nothing stopped — the notification never fired, the formatter never ran, and this event is the only trace',
     Icon: HookFailedIcon,
+    toggleWith: 'hook_blocking_error',
+  },
+  {
+    kind: 'event_hook',
+    label: 'hook',
+    plural: 'session hooks',
+    hint: 'a hook that ran on a session event rather than a tool call — SessionStart, UserPromptSubmit — with the command, how long it took, what it set and, verbatim, the context it added for the model',
+    Icon: HookIcon,
     toggleWith: 'hook_blocking_error',
   },
   {
