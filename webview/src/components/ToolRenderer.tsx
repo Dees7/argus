@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import hljs from 'highlight.js';
 import { diffLines } from 'diff';
-import { Attachment, Step } from '../types/session';
+import { Attachment, Step, stepKey } from '../types/session';
 import { ansiToHtml, hasAnsi } from '../utils/ansi';
 import Attachments, { useAttachmentBytes } from './Attachments';
 import { parseAskUserQuestion } from './askUserQuestion';
+import { PlanComment, PlanOutcome, parseExitPlanMode } from './exitPlanMode';
 import { renderMarkdown } from './ContentRenderer';
 import PeerSessionLink from './PeerSessionLink';
 import { ResultBlocksRenderer, ToolSearchRenderer, asResultBlocks } from './resultBlocks';
@@ -711,6 +712,238 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
 };
 
 /**
+ * Wrap each quote's first occurrence in the rendered plan in a `<mark>`. The
+ * quote was selected in rendered text too, so it is matched against the DOM's
+ * text with whitespace dropped on both sides — soft line breaks and the gaps
+ * between inline elements never line up otherwise. A quote may run across
+ * several text nodes (`tags.yaml` sits in a `<code>`); each piece is wrapped
+ * on its own, all sharing the comment's number.
+ */
+const markQuotes = (root: HTMLElement, quotes: string[]) => {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+
+  // The page's text without whitespace, and where each character came from.
+  let hay = '';
+  const origin: { node: number; offset: number }[] = [];
+  nodes.forEach((node, i) => {
+    const text = node.data;
+    for (let k = 0; k < text.length; k++) {
+      if (/\s/.test(text[k])) continue;
+      hay += text[k];
+      origin.push({ node: i, offset: k });
+    }
+  });
+
+  type Piece = { node: number; from: number; to: number; n: number; last: boolean };
+  const pieces: Piece[] = [];
+  const taken: [number, number][] = [];
+  quotes.forEach((quote, qi) => {
+    const needle = quote.replace(/\s+/g, '');
+    if (!needle) return;
+    let at = hay.indexOf(needle);
+    if (at < 0) at = hay.toLowerCase().indexOf(needle.toLowerCase());
+    const end = at + needle.length - 1;
+    if (at < 0 || taken.some(([a, b]) => at <= b && end >= a)) return;
+    taken.push([at, end]);
+    // One piece per text node the match touches. Between two pieces there is
+    // only whitespace, so a piece that is followed by another runs to its
+    // node's end and the next one starts at its node's beginning — the mark
+    // reads as one stretch, not words with gaps.
+    const own: Piece[] = [];
+    for (let k = at; k <= end; k++) {
+      const { node, offset } = origin[k];
+      const prev = own[own.length - 1];
+      if (prev && prev.node === node) {
+        prev.to = offset + 1;
+        continue;
+      }
+      if (prev) prev.to = nodes[prev.node].data.length;
+      own.push({ node, from: prev ? 0 : offset, to: offset + 1, n: qi + 1, last: false });
+    }
+    own[own.length - 1].last = true;
+    pieces.push(...own);
+  });
+
+  // Back to front: splitting a text node leaves its head — and every offset
+  // into that head — where it was.
+  pieces
+    .sort((a, b) => b.node - a.node || b.from - a.from)
+    .forEach(p => {
+      const node = nodes[p.node];
+      node.splitText(p.to);
+      const middle = node.splitText(p.from);
+      const mark = document.createElement('mark');
+      mark.className = 'tr-plan-mark';
+      mark.dataset.comment = String(p.n);
+      middle.replaceWith(mark);
+      mark.appendChild(middle);
+      if (p.last) {
+        const badge = document.createElement('sup');
+        badge.className = 'tr-plan-mark-n';
+        badge.dataset.comment = String(p.n);
+        badge.textContent = String(p.n);
+        mark.after(badge);
+      }
+    });
+};
+
+const PlanBody = ({ plan, comments }: { plan: string; comments: PlanComment[] }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const html = useMemo(() => renderMarkdown(plan), [plan]);
+  const quotes = JSON.stringify(comments.map(c => c.quote));
+  // The markup is written here rather than through `dangerouslySetInnerHTML`:
+  // marking edits the DOM, and a live session re-parses its steps on every
+  // refresh, so each pass has to start from clean html or the marks stack up.
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = html;
+    markQuotes(ref.current, JSON.parse(quotes));
+  }, [html, quotes]);
+  return <div className="cr-pretty tr-plan-body" ref={ref} />;
+};
+
+const ExitPlanModeRenderer = ({ input, result, step }: { input: any; result: any; step?: Step }) => {
+  const call = useMemo(() => parseExitPlanMode(input, result), [input, result]);
+  const blockRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<number | null>(null);
+
+  const status = OUTCOME_BADGE[call.outcome];
+  const fileName = call.planFilePath.split(/[\\/]/).pop() || '';
+
+  // Comment → its place in the plan below, and back. The highlight is the
+  // state, the scroll is a side effect of picking one.
+  const reveal = (n: number) => {
+    setActive(n);
+    blockRef.current
+      ?.querySelector(`.tr-plan-mark[data-comment="${n}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  useEffect(() => {
+    const root = blockRef.current;
+    if (!root) return;
+    root.querySelectorAll('.tr-plan-mark-active').forEach(el => el.classList.remove('tr-plan-mark-active'));
+    if (active !== null) {
+      root
+        .querySelectorAll(`.tr-plan-mark[data-comment="${active}"]`)
+        .forEach(el => el.classList.add('tr-plan-mark-active'));
+    }
+  }, [active, call]);
+  const onPlanClick = (e: React.MouseEvent) => {
+    const n = (e.target as Element).closest?.('[data-comment]')?.getAttribute('data-comment');
+    if (!n) return;
+    setActive(Number(n));
+    blockRef.current
+      ?.querySelector(`.tr-plan-comment[data-comment="${n}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+
+  const openFile = () => window.vscodeApi?.postMessage({ type: 'openLink', href: call.planFilePath });
+  // The plan as it stood at this step, with the comments pinned to their
+  // lines by the editor's own comment threads. The file on disk is rewritten
+  // on every round of planning, so it is not what these comments were on.
+  const openSnapshot = () =>
+    window.vscodeApi?.postMessage({
+      type: 'openPlanSnapshot',
+      plan: call.plan,
+      fileName: fileName || 'plan.md',
+      label: step ? `step ${stepKey(step)}` : '',
+      comments: call.comments.map(c => ({ quote: c.quote, text: c.text, lines: c.lines })),
+    });
+
+  if (!call.plan && call.comments.length === 0) {
+    return <div className="tr-empty">No plan recorded for this call.</div>;
+  }
+
+  return (
+    <div className="tr-block" ref={blockRef}>
+      <div className="tr-task-header tr-plan-header">
+        {status && <span className={`tr-badge ${status.cls}`}>{status.label}</span>}
+        {call.comments.length > 0 && (
+          <span className="tr-meta">
+            {call.comments.length} comment{call.comments.length === 1 ? '' : 's'}
+          </span>
+        )}
+        <span className="tr-plan-actions">
+          {call.planFilePath && (
+            <button
+              type="button"
+              className="tr-link tr-plan-file"
+              onClick={openFile}
+              title={`${call.planFilePath}\nThe file as it is now — later rounds of planning overwrite it`}
+            >
+              {fileName}
+            </button>
+          )}
+          {call.plan && (
+            <button
+              type="button"
+              className="tr-plan-open"
+              onClick={openSnapshot}
+              title="Open the plan as it was at this step, with the comments on their lines"
+            >
+              Open in editor{call.comments.length > 0 ? ' with comments' : ''}
+            </button>
+          )}
+        </span>
+      </div>
+
+      {call.feedback && (
+        <div className="tr-plan-feedback">
+          <div className="tr-section-label">User said</div>
+          <pre className="tr-ask-custom">{call.feedback}</pre>
+        </div>
+      )}
+
+      {call.comments.length > 0 && (
+        <ol className="tr-plan-comments">
+          {call.comments.map((c, i) => (
+            <li
+              key={i}
+              className={`tr-plan-comment${active === i + 1 ? ' tr-plan-comment-active' : ''}`}
+              data-comment={i + 1}
+              onClick={() => reveal(i + 1)}
+            >
+              <div className="tr-plan-comment-head">
+                <span className="tr-plan-comment-n">{i + 1}</span>
+                <span className="tr-plan-comment-line">
+                  {c.lines
+                    ? c.lines.start === c.lines.end
+                      ? `L${c.lines.start}`
+                      : `L${c.lines.start}–${c.lines.end}`
+                    : c.quote
+                      ? 'not found in plan'
+                      : 'whole plan'}
+                </span>
+                {c.quote && <q className="tr-plan-comment-quote">{c.quote}</q>}
+              </div>
+              <div className="tr-plan-comment-text">{c.text}</div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {call.plan && (
+        <div onClick={onPlanClick}>
+          <div className="tr-section-label">Plan</div>
+          <PlanBody plan={call.plan} comments={call.comments} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const OUTCOME_BADGE: Record<PlanOutcome, { label: string; cls: string } | undefined> = {
+  approved: { label: 'approved', cls: 'tr-badge-success' },
+  'kept-planning': { label: 'kept planning', cls: 'tr-badge-info' },
+  rejected: { label: 'rejected', cls: 'tr-badge-error' },
+  aborted: { label: 'aborted', cls: 'tr-badge-warn' },
+  pending: { label: 'waiting for user', cls: 'tr-badge-warn' },
+  unknown: undefined,
+};
+
+/**
  * The base64 payload of a result's attachments. The parser leaves a `[image]`
  * marker in the result text — that is the parsed view — so the raw view has to
  * go back to the host for the bytes the transcript actually holds.
@@ -811,6 +1044,7 @@ const RENDERERS: Record<string, (props: { input: any; result: any; step?: Step }
   WebFetch: WebFetchRenderer,
   WebSearch: WebSearchRenderer,
   AskUserQuestion: AskUserQuestionRenderer,
+  ExitPlanMode: ExitPlanModeRenderer,
   ToolSearch: ToolSearchRenderer,
 };
 

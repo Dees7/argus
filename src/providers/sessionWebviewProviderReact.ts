@@ -6,6 +6,7 @@ import { ParserService } from '../services/parserService';
 import { AnalysisOptions, AnalyzerService } from '../services/analyzerService';
 import { DiscoveryService } from '../services/discoveryService';
 import { PeerSessionService } from '../services/peerSessionService';
+import { PlanSnapshots } from './planSnapshots';
 import { SessionDetail } from '../types/models';
 
 /**
@@ -35,6 +36,9 @@ export class SessionWebviewProviderReact {
   // A reload debounced by a watcher but not yet run. Kept per session so
   // freezing a panel can cancel it instead of letting it land a moment later.
   private reloadTimers: Map<string, NodeJS.Timeout> = new Map();
+  // One for the whole extension: every panel's plans open as documents of the
+  // same scheme, under the same comment controller.
+  private planSnapshots = new PlanSnapshots();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -44,6 +48,7 @@ export class SessionWebviewProviderReact {
     private peerSessionService: PeerSessionService,
     private archivedSessions?: { isArchived(sessionId: string): boolean }
   ) {
+    context.subscriptions.push(this.planSnapshots);
     // Push settings.json edits into already-open sessions; otherwise a changed
     // autoExpand/sort default only takes effect on the next panel.
     context.subscriptions.push(
@@ -240,6 +245,18 @@ export class SessionWebviewProviderReact {
           }
           case 'openLink':
             await this.openLink(sessionData.project, message.href);
+            break;
+          // An ExitPlanMode step's plan, as it read at that step, with the
+          // user's comments on it.
+          case 'openPlanSnapshot':
+            if (typeof message.plan === 'string') {
+              await this.planSnapshots.open(
+                message.plan,
+                typeof message.fileName === 'string' ? message.fileName : 'plan.md',
+                typeof message.label === 'string' ? message.label : '',
+                Array.isArray(message.comments) ? message.comments : []
+              );
+            }
             break;
           case 'setTabsCollapsed':
             await this.setCollapsed(TABS_COLLAPSED_KEY, message.collapsed === true);
