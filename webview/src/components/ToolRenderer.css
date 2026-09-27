@@ -997,8 +997,17 @@
   cursor: pointer;
 }
 
+/* Text under two comments or more: a quote inside another, or two that share
+   a stretch. */
+.tr-plan-mark-overlap {
+  background: color-mix(in srgb, var(--status-warning, #d4a72c) 40%, transparent);
+  border-bottom-width: 2px;
+}
+
+/* The picked comment is outlined, not just darker — overlaps are darker too. */
 .tr-plan-mark-active {
-  background: color-mix(in srgb, var(--status-warning, #d4a72c) 45%, transparent);
+  background: color-mix(in srgb, var(--status-warning, #d4a72c) 55%, transparent);
+  box-shadow: 0 0 0 1px var(--status-warning, #d4a72c);
 }
 
 .tr-plan-mark-n {

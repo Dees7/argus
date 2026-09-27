@@ -715,53 +715,94 @@ const AskUserQuestionRenderer = ({ input, result }: { input: any; result: any })
  * Wrap each quote's first occurrence in the rendered plan in a `<mark>`. The
  * quote was selected in rendered text too, so it is matched against the DOM's
  * text with whitespace dropped on both sides — soft line breaks and the gaps
- * between inline elements never line up otherwise. A quote may run across
- * several text nodes (`tags.yaml` sits in a `<code>`); each piece is wrapped
- * on its own, all sharing the comment's number.
+ * between inline elements never line up otherwise.
+ *
+ * Quotes may overlap: one sits inside another, or two share a stretch of
+ * text. So the text is cut at every quote's edge, and each stretch between
+ * two cuts is marked with all the comments that cover it — a stretch under
+ * several reads darker. Each comment's number goes where its own quote ends,
+ * so a quote inside another shows its end mid-mark, and two quotes ending
+ * together get two numbers side by side.
+ *
+ * A stretch may run across several text nodes (`tags.yaml` sits in a
+ * `<code>`); each piece is wrapped on its own.
  */
 const markQuotes = (root: HTMLElement, quotes: string[]) => {
   const nodes: Text[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
 
-  // The page's text without whitespace, and where each character came from.
+  // The page's text without whitespace, and where in the whole text each
+  // character came from.
   let hay = '';
-  const origin: { node: number; offset: number }[] = [];
-  nodes.forEach((node, i) => {
+  const pos: number[] = [];
+  const starts: number[] = [];
+  let total = 0;
+  nodes.forEach(node => {
+    starts.push(total);
     const text = node.data;
     for (let k = 0; k < text.length; k++) {
       if (/\s/.test(text[k])) continue;
       hay += text[k];
-      origin.push({ node: i, offset: k });
+      pos.push(total + k);
     }
+    total += text.length;
   });
 
-  type Piece = { node: number; from: number; to: number; n: number; last: boolean };
-  const pieces: Piece[] = [];
-  const taken: [number, number][] = [];
+  // Each quote as a half-open range of `hay`.
+  const ranges: { n: number; from: number; to: number }[] = [];
   quotes.forEach((quote, qi) => {
     const needle = quote.replace(/\s+/g, '');
     if (!needle) return;
     let at = hay.indexOf(needle);
     if (at < 0) at = hay.toLowerCase().indexOf(needle.toLowerCase());
-    const end = at + needle.length - 1;
-    if (at < 0 || taken.some(([a, b]) => at <= b && end >= a)) return;
-    taken.push([at, end]);
-    // One piece per text node the match touches. Between two pieces there is
-    // only whitespace, so a piece that is followed by another runs to its
-    // node's end and the next one starts at its node's beginning — the mark
-    // reads as one stretch, not words with gaps.
-    const own: Piece[] = [];
-    for (let k = at; k <= end; k++) {
-      const { node, offset } = origin[k];
-      const prev = own[own.length - 1];
-      if (prev && prev.node === node) {
-        prev.to = offset + 1;
-        continue;
-      }
-      if (prev) prev.to = nodes[prev.node].data.length;
-      own.push({ node, from: prev ? 0 : offset, to: offset + 1, n: qi + 1, last: false });
+    if (at >= 0) ranges.push({ n: qi + 1, from: at, to: at + needle.length });
+  });
+
+  // Stretches in whole-text offsets. `ns` covers it, `pick` is the innermost
+  // of them — the one a click means — and `ends` are the quotes ending here.
+  type Stretch = { hayTo: number; from: number; to: number; ns: number[]; pick: number; ends: number[] };
+  const stretches: Stretch[] = [];
+  const cuts = [...new Set(ranges.flatMap(r => [r.from, r.to]))].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const [a, b] = [cuts[i], cuts[i + 1]];
+    const over = ranges.filter(r => r.from <= a && r.to >= b);
+    if (over.length === 0) continue;
+    const inner = over.reduce((x, y) => (y.to - y.from < x.to - x.from ? y : x));
+    const s: Stretch = {
+      hayTo: b,
+      from: pos[a],
+      to: pos[b - 1] + 1,
+      ns: over.map(r => r.n),
+      pick: inner.n,
+      ends: ranges.filter(r => r.to === b).map(r => r.n),
+    };
+    // The whitespace between two stretches that touch goes to the one fewer
+    // comments cover — it lies in their common part. A number closing the
+    // first one stays against its last word, so then it goes to the second.
+    const prev = stretches[stretches.length - 1];
+    if (prev && prev.hayTo === a) {
+      if (prev.ends.length > 0 || s.ns.length <= prev.ns.length) s.from = prev.to;
+      else prev.to = s.from;
     }
+    stretches.push(s);
+  }
+
+  // One piece per text node a stretch touches. Between two pieces there is
+  // only whitespace, so a piece that is followed by another runs to its node's
+  // end and the next one starts at its node's beginning — the mark reads as
+  // one stretch, not words with gaps. Whitespace-only nodes — the gaps between
+  // list items — are left alone.
+  type Piece = { node: number; from: number; to: number; s: Stretch; last: boolean };
+  const pieces: Piece[] = [];
+  stretches.forEach(s => {
+    const own: Piece[] = [];
+    nodes.forEach((node, i) => {
+      const from = Math.max(s.from, starts[i]) - starts[i];
+      const to = Math.min(s.to, starts[i] + node.data.length) - starts[i];
+      if (to > from && /\S/.test(node.data)) own.push({ node: i, from, to, s, last: false });
+    });
+    if (own.length === 0) return;
     own[own.length - 1].last = true;
     pieces.push(...own);
   });
@@ -775,16 +816,22 @@ const markQuotes = (root: HTMLElement, quotes: string[]) => {
       node.splitText(p.to);
       const middle = node.splitText(p.from);
       const mark = document.createElement('mark');
-      mark.className = 'tr-plan-mark';
-      mark.dataset.comment = String(p.n);
+      mark.className = p.s.ns.length > 1 ? 'tr-plan-mark tr-plan-mark-overlap' : 'tr-plan-mark';
+      mark.dataset.comment = String(p.s.pick);
+      mark.dataset.comments = p.s.ns.join(' ');
+      if (p.s.ns.length > 1) mark.title = `Comments ${p.s.ns.join(', ')}`;
       middle.replaceWith(mark);
       mark.appendChild(middle);
       if (p.last) {
-        const badge = document.createElement('sup');
-        badge.className = 'tr-plan-mark-n';
-        badge.dataset.comment = String(p.n);
-        badge.textContent = String(p.n);
-        mark.after(badge);
+        mark.after(
+          ...p.s.ends.map(n => {
+            const badge = document.createElement('sup');
+            badge.className = 'tr-plan-mark-n';
+            badge.dataset.comment = String(n);
+            badge.textContent = String(n);
+            return badge;
+          }),
+        );
       }
     });
 };
@@ -817,7 +864,7 @@ const ExitPlanModeRenderer = ({ input, result, step }: { input: any; result: any
   const reveal = (n: number) => {
     setActive(n);
     blockRef.current
-      ?.querySelector(`.tr-plan-mark[data-comment="${n}"]`)
+      ?.querySelector(`.tr-plan-mark[data-comments~="${n}"]`)
       ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
   useEffect(() => {
@@ -826,7 +873,7 @@ const ExitPlanModeRenderer = ({ input, result, step }: { input: any; result: any
     root.querySelectorAll('.tr-plan-mark-active').forEach(el => el.classList.remove('tr-plan-mark-active'));
     if (active !== null) {
       root
-        .querySelectorAll(`.tr-plan-mark[data-comment="${active}"]`)
+        .querySelectorAll(`.tr-plan-mark[data-comments~="${active}"]`)
         .forEach(el => el.classList.add('tr-plan-mark-active'));
     }
   }, [active, call]);
