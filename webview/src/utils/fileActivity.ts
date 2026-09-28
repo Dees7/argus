@@ -56,15 +56,18 @@ export const inferHome = (cwd: string): string => {
 export const resolvePath = (raw: string, base: string, home: string): string => {
   let p = raw.trim();
   if (!p) return '';
-  if (WINDOWS_ABS.test(p)) p = p.replace(/\\/g, '/');
   if (p === '~' || p.startsWith('~/')) {
     if (!home) return '';
     p = home + p.slice(1);
   }
   if (!isAbsolute(p)) {
     if (!base) return '';
-    p = `${base.replace(/\/+$/, '')}/${p}`;
+    p = `${base}/${p}`;
   }
+  // Normalised only after joining, so a relative `src\a.ts` under a Windows
+  // cwd is caught too. The drive letter is uppercased because VS Code reports
+  // the cwd as `c:\…` while tool calls write `C:\…` — both must be one node.
+  if (WINDOWS_ABS.test(p)) p = p[0].toUpperCase() + p.slice(1).replace(/\\/g, '/');
   const segments = p.split('/');
   const drive = WINDOWS_ABS.test(p) ? segments.shift() ?? '' : '';
   const out: string[] = [];

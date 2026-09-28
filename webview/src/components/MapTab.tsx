@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { Step } from '../types/session';
-import { FileEvent, commonAncestor, extractFileEvents } from '../utils/fileActivity';
+import { FileEvent, commonAncestor, extractFileEvents, resolvePath } from '../utils/fileActivity';
 import { TreeNode, buildFileTree, hasActivity } from '../utils/fileTree';
 import './MapTab.css';
 
@@ -131,11 +131,9 @@ const MapTab = ({ steps, cwd, topLevelEntries, onGoToStep }: Props) => {
 
   // The host sends the real working directory; `session.project` is only a
   // display name, and treating it as a path would put a made-up folder at the
-  // root of the tree.
-  const cwdPath = useMemo(
-    () => (/^([a-zA-Z]:[\\/]|\/)/.test(cwd) ? cwd.replace(/\/+$/, '') : ''),
-    [cwd]
-  );
+  // root of the tree. Normalised like every file path, or a Windows cwd would
+  // never match the paths it contains.
+  const cwdPath = useMemo(() => resolvePath(cwd, '', ''), [cwd]);
 
   // Everything the session touched, wherever it lives — tool calls name their
   // paths outright, shell commands are parsed for the shapes that create and
