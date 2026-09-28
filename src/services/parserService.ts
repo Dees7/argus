@@ -919,6 +919,17 @@ export class ParserService {
         }
       }
 
+      // What a hook told the person rather than the model — its `systemMessage`.
+      // The CLI prints it under the turn and nothing else in the transcript
+      // carries the text: the `hook_success` it came from is a Stop hook's, and
+      // those only reach the timeline summed up by `stop_hook_summary`.
+      if (event.type === 'attachment' && event.attachment?.type === 'hook_system_message') {
+        const step = this.buildHookSystemMessageStep(event, steps.length);
+        if (step) {
+          steps.push(step);
+        }
+      }
+
       // A request that failed and was retried. The attempt that worked is
       // written as an ordinary assistant message, so without these the minute a
       // turn spent on ten 429s reads as the model having been slow.
@@ -1615,6 +1626,39 @@ export class ParserService {
     }
     rows.set(event.uuid, row);
     return row.step;
+  }
+
+  /**
+   * Step for an `attachment/hook_system_message` event — the message a hook
+   * showed the person.
+   *
+   * A string in every transcript we have; the array form a sibling attachment
+   * uses is tolerated, so a shape change does not lose the text.
+   */
+  private buildHookSystemMessageStep(event: RawEvent, index: number): Step | null {
+    const attachment = event.attachment ?? {};
+    const text = (Array.isArray(attachment.content) ? attachment.content : [attachment.content])
+      .map(part => (typeof part === 'string' ? part.trim() : ''))
+      .filter(Boolean)
+      .join('\n\n');
+    if (!text) {
+      return null;
+    }
+
+    return {
+      index,
+      type: 'system',
+      systemKind: 'hook_system_message',
+      // A hook reporting what it did is the harness working.
+      systemSeverity: 'notice',
+      systemSource: typeof attachment.hookName === 'string' ? attachment.hookName : undefined,
+      timestamp: new Date(event.timestamp),
+      uuid: event.uuid,
+      messageId: '',
+      toolUseId: typeof attachment.toolUseID === 'string' ? attachment.toolUseID : undefined,
+      content: text,
+      cost: 0,
+    };
   }
 
   /** The fixed part of an `event_hook` step; its text comes from `renderEventHook`. */

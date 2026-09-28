@@ -112,6 +112,10 @@ export interface RawEvent {
     // `SessionStart` hook's is written right after its `hook_success`, with
     // that event as `parentUuid`; a `UserPromptSubmit` hook gets no
     // `hook_success` at all, so this is its only record.
+    //
+    // `hook_system_message` — the `systemMessage` a hook answered with: text
+    // for the person, which the CLI printed and the model never saw. A plain
+    // string, written right after the `hook_success` of the hook that sent it.
     content?: string[] | string;
   };
 

@@ -115,6 +115,23 @@ const HookIcon = ({ className, size = 13 }: IconProps) => (
   </svg>
 );
 
+/** A speech bubble: a hook saying something to the person, not the model. */
+const HookMessageIcon = ({ className, size = 13 }: IconProps) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+  </svg>
+);
+
 export interface SystemStepKindInfo {
   /** Matches `Step.systemKind` as the parser writes it. */
   kind: string;
@@ -155,7 +172,7 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     // as the rare row.
     button: {
       plural: 'hook steps',
-      hint: 'everything the hooks did — the session-start and prompt hooks with the context they added, one that blocked a tool call, one that failed and was let through, and what the Stop hooks did at the end of each turn; red is a hook that went wrong, grey is a hook that simply ran',
+      hint: 'everything the hooks did — the session-start and prompt hooks with the context they added, one that blocked a tool call, one that failed and was let through, what the Stop hooks did at the end of each turn and the messages they showed you; red is a hook that went wrong, grey is a hook that simply ran',
       Icon: HookIcon,
     },
   },
@@ -173,6 +190,14 @@ export const SYSTEM_STEP_KINDS: SystemStepKindInfo[] = [
     plural: 'session hooks',
     hint: 'a hook that ran on a session event rather than a tool call — SessionStart, UserPromptSubmit — with the command, how long it took, what it set and, verbatim, the context it added for the model',
     Icon: HookIcon,
+    toggleWith: 'hook_blocking_error',
+  },
+  {
+    kind: 'hook_system_message',
+    label: 'hook message',
+    plural: 'hook messages',
+    hint: "a hook's systemMessage — text the CLI printed for you under the turn; the model never saw it",
+    Icon: HookMessageIcon,
     toggleWith: 'hook_blocking_error',
   },
   {

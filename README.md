@@ -235,10 +235,11 @@ Parsed so far:
 | `hook error` | `attachment/hook_blocking_error` — a hook blocked a tool call and the model was handed the error instead of a result. The row shows which hook fired (`PostToolUse:Bash`) and the message; expanding it shows the whole thing, with the command that produced it. |
 | `hook failed` | `attachment/hook_non_blocking_error` — a hook exited non-zero and nothing stopped: the tool call went ahead, the turn ended, and this event is the only trace that the notification never fired or the formatter never ran. The row shows the hook, the command, whatever it printed and how it ended (`exit 126 · 9ms`). |
 | `stop hooks` | `system/stop_hook_summary` — what the Stop hooks did when a turn ended. One row per turn, so most say only that they ran and how long they took; the ones worth finding are the hook that errored and the hook that refused to let the turn end, and those are the red ones. |
+| `hook message` | `attachment/hook_system_message` — the `systemMessage` a hook answered with: text the CLI printed for the person under the turn and the model never saw. The row shows which hook sent it (`Stop`) and the message as it was printed. |
 | `api error` | `system/api_error` — a request failed and was retried. The row shows what came back and which attempt it was (`429 · retry 1/10`) plus the message the response carried, dug out of whichever shape the error arrived in; expanding it prints the error object as JSON, request ids and proxy headers included. One row per attempt, so a burst of retries reads as the burst it was — and, with them shown, the wait they caused is split off the step before them instead of counting as model time. |
 | `command` | `system/local_command` — a slash command the CLI answered by itself, which the model never saw. The invocation and its output are separate rows, the second labelled after the first (`/status · output`). |
 
-The first three share one button, `hook steps`: what the hooks did is one
+The hook kinds share one button, `hook steps`: what the hooks did is one
 question, and the stop hooks outnumber the failures by roughly ten to one but
 arrive grey against their red, so the rare row still stands out.
 

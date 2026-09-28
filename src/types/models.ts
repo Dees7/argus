@@ -147,6 +147,7 @@ export type SystemStepKind =
   | 'hook_blocking_error'
   | 'hook_non_blocking_error'
   | 'event_hook'
+  | 'hook_system_message'
   | 'api_error'
   | 'local_command'
   | 'stop_hook_summary';
