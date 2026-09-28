@@ -5,8 +5,11 @@
 src/**
 webview/**
 screenshots/**
+specs/**
 node_modules/**
 .gitignore
+commits.md
+release.md
 .yarnrc
 .eslintrc.json
 vsc-extension-quickstart.md
