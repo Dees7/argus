@@ -130,8 +130,12 @@ export interface Step {
   origin?: StepOrigin;
   // Set on `SendMessage` tool calls — which channel it used and where it went.
   messageTarget?: StepMessageTarget;
+  // Transcript event the step came from; several steps can share one.
+  uuid?: string;
   agentId?: string;
   globalIndex?: number;
+  // Set by `flattenSessionSteps` — see `stepId` below.
+  stepId?: string;
 }
 
 export interface TokenUsage {
@@ -214,6 +218,13 @@ export interface ContextMetrics {
  * to agree on this, or the highlight lands on the wrong row.
  */
 export const stepKey = (step: Step): number => step.globalIndex ?? step.index;
+
+/**
+ * What per-step UI state (expanded or not) is kept by. Unlike `stepKey` it
+ * doesn't move when a running agent inserts steps above, so a live session
+ * doesn't carry the user's clicks onto the neighbouring rows.
+ */
+export const stepId = (step: Step): string => step.stepId ?? String(stepKey(step));
 
 export interface Finding {
   rule?: string;

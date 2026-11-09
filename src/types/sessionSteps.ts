@@ -6,8 +6,12 @@
 
 interface FlattenStep {
   index: number;
+  type: string;
+  uuid?: string;
+  toolUseId?: string;
   agentId?: string;
   globalIndex?: number;
+  stepId?: string;
 }
 
 interface FlattenSubagent<TStep> {
@@ -42,7 +46,10 @@ export function spawnKey(agentId: string | undefined, stepIndex: number): string
  * Build a single chronological step list combining the main session and any
  * sub-agents. Each agent's steps are inserted right after the Task tool_use
  * that spawned them. `globalIndex` is assigned in iteration order so callers
- * have a stable, unique identifier for navigation/highlighting.
+ * have a unique number for navigation/highlighting — but it shifts whenever a
+ * running agent inserts steps above. `stepId` is the one that doesn't: it
+ * names the transcript event the step came from, so state kept per step (what
+ * the user has expanded) stays on its step while a live session grows.
  */
 export function flattenSessionSteps<TStep extends FlattenStep, TSub extends FlattenSubagent<TStep>>(
   session: FlattenSession<TStep, TSub>
@@ -58,8 +65,20 @@ export function flattenSessionSteps<TStep extends FlattenStep, TSub extends Flat
   }
 
   const out: TStep[] = [];
+  const seen = new Map<string, number>();
   const push = (s: TStep, agentId?: string) => {
-    out.push({ ...s, agentId: agentId ?? s.agentId, globalIndex: out.length });
+    const owner = agentId ?? s.agentId ?? '';
+    // One event can yield several steps of the same kind (two text blocks);
+    // they arrive together and only ever get appended to, so a running count
+    // tells them apart the same way on every rebuild.
+    let stepId = `${owner}:${s.index}`;
+    if (s.uuid) {
+      const base = `${owner}|${s.uuid}|${s.type}|${s.toolUseId ?? ''}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      stepId = n === 0 ? base : `${base}#${n}`;
+    }
+    out.push({ ...s, agentId: agentId ?? s.agentId, globalIndex: out.length, stepId });
   };
 
   // Emitting is recursive: an agent's own steps can themselves spawn agents,

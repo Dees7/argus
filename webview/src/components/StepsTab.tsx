@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Step, Subagent, Finding, TokenUsage, spawnKey, stepKey } from '../types/session';
+import { Step, Subagent, Finding, TokenUsage, spawnKey, stepKey, stepId } from '../types/session';
 import { formatModelLabel, modelFamilyKey } from '../../../src/types/modelFamily';
 import { formatEffortLabel } from '../../../src/types/effort';
 import ToolRenderer from './ToolRenderer';
@@ -457,8 +457,10 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
-  // on arrival, and a changed setting doesn't strand stale expansions.
-  const [toggledSteps, setToggledSteps] = useState<Set<number>>(new Set());
+  // on arrival, and a changed setting doesn't strand stale expansions. Kept by
+  // `stepId`, not the row number: a live agent inserting steps above would
+  // otherwise move every click onto the row that slid into its place.
+  const [toggledSteps, setToggledSteps] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
@@ -487,7 +489,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   );
 
   const isStepExpanded = useCallback(
-    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(keyOf(step)),
+    (step: Step) => isAutoExpanded(step) !== toggledSteps.has(stepId(step)),
     [isAutoExpanded, toggledSteps]
   );
 
@@ -702,12 +704,15 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     setHighlightStep(stepToShow);
     // Force the step open: drop the flip if it is auto-expanded already,
     // add one otherwise.
-    setToggledSteps(prev => {
-      const next = new Set(prev);
-      if (target && autoExpanded(target)) next.delete(stepToShow);
-      else next.add(stepToShow);
-      return next;
-    });
+    if (target) {
+      const id = stepId(target);
+      setToggledSteps(prev => {
+        const next = new Set(prev);
+        if (autoExpanded(target)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    }
     // A nested agent is hidden by any collapsed ancestor too, so the whole
     // chain is opened, not just the agent the step belongs to.
     if (target?.agentId) {
@@ -734,13 +739,13 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     }, 100);
   }, [jumpTo]);
 
-  const toggleStep = (index: number) => {
+  const toggleStep = (id: string) => {
     setToggledSteps(prev => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
+      if (next.has(id)) {
+        next.delete(id);
       } else {
-        next.add(index);
+        next.add(id);
       }
       return next;
     });
@@ -1362,7 +1367,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
 
             return (
               <div
-                key={k}
+                key={stepId(step)}
                 style={{ '--depth': String(depth) } as React.CSSProperties}
                 className={[
                   'step-item',
@@ -1388,7 +1393,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                     style={{ '--level': String(level) } as React.CSSProperties}
                   />
                 ))}
-                <button className="step-header" onClick={() => toggleStep(k)}>
+                <button className="step-header" onClick={() => toggleStep(stepId(step))}>
                   {linkedAgents && !allCollapsed && <span className="step-spawn-stub" />}
                   <div className="step-left">
                     <StepIcon step={step} />
