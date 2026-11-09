@@ -172,6 +172,8 @@ export interface Subagent {
   parentStepIndex?: number;
   toolUseId?: string;
   spawnDepth?: number;
+  // Set on agents a `Workflow` script ran — see the host's `SubagentWorkflow`.
+  workflow?: { runId: string; phase?: string };
   startTime?: string;
   endTime?: string;
   durationMs?: number;

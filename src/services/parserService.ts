@@ -16,6 +16,7 @@ import {
   isSystemStep,
 } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
+import { listSubagentTranscripts, subagentsDirOf } from '../utils/subagentFiles';
 
 /**
  * Wrappers the harness injects into a user turn — IDE state, hook output,
@@ -42,6 +43,14 @@ const INJECTED_BLOCK_RE = new RegExp(
 const COMMAND_NAME_RE = /<command-name>([\s\S]*?)<\/command-name>/;
 const COMMAND_ARGS_RE = /<command-args>([\s\S]*?)<\/command-args>/;
 const COMMAND_STDOUT_RE = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/;
+
+// A `Workflow` script's agent gets its turns wrapped in a frame: one header
+// line (`[Workflow harness — computed task] …follows:`) and the text itself
+// indented by two spaces. The header is a paragraph of instructions to the
+// model; the indented text is what the turn says. Two kinds are written —
+// `user request` (the request that started the run, relayed) and
+// `computed task` (what the script asked this agent to do).
+const WORKFLOW_FRAME_RE = /^\s*\[Workflow harness\s*[—–-]\s*([^\]]+)\][^\n]*(?:\n|$)/;
 
 /**
  * How far into a transcript the metadata scan keeps looking for the pieces it
@@ -2077,15 +2086,19 @@ export class ParserService {
    * session. Layout is `<projectDir>/<sessionId>/subagents/`.
    */
   getSubagentsDir(projectDir: string, sessionId: string): string {
-    return path.join(projectDir, sessionId, 'subagents');
+    return subagentsDirOf(projectDir, sessionId);
   }
 
   /**
    * Transcript of one sub-agent. The file keeps the `agent-` prefix that the
-   * canonical id stored internally does not.
+   * canonical id stored internally does not. A `Workflow` agent's transcript
+   * is one level down, under its run's directory, so it has to be looked up.
    */
   getSubagentFilePath(projectDir: string, sessionId: string, agentId: string): string {
-    return path.join(this.getSubagentsDir(projectDir, sessionId), `agent-${agentId}.jsonl`);
+    const direct = path.join(this.getSubagentsDir(projectDir, sessionId), `agent-${agentId}.jsonl`);
+    if (fs.existsSync(direct)) return direct;
+    const nested = listSubagentTranscripts(projectDir, sessionId).find(t => t.agentId === agentId);
+    return nested?.filePath ?? direct;
   }
 
   /**
@@ -2093,36 +2106,24 @@ export class ParserService {
    * with its agentId so they can be threaded into the parent session timeline.
    */
   async parseSubagents(projectDir: string, sessionId: string): Promise<SubagentInfo[]> {
-    const subagentsDir = this.getSubagentsDir(projectDir, sessionId);
-
-    if (!fs.existsSync(subagentsDir)) {
-      return [];
-    }
-
     const subagents: SubagentInfo[] = [];
 
     try {
-      const files = fs.readdirSync(subagentsDir);
-
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) {
-          continue;
-        }
-
-        // Filenames carry an `agent-` prefix that the JSONL contents and the
-        // spawning tool's `toolUseResult.agentId` do not. Strip it so the
-        // canonical id matches across all three sources.
-        const agentId = file.replace(/^agent-/, '').replace(/\.jsonl$/, '');
-        const filePath = path.join(subagentsDir, file);
+      for (const { agentId, filePath, metaPath, workflowRunId } of listSubagentTranscripts(projectDir, sessionId)) {
         const events = await this.parseFile(filePath);
 
         if (events.length === 0) {
           continue;
         }
 
-        // Extract prompt from first user event
+        // Extract prompt from first user event. A workflow agent's first turn
+        // is usually the relayed request that started the whole run — the
+        // same for every agent of it — so its own task is looked for first.
         let prompt = '';
-        for (const event of events) {
+        const firstUser = workflowRunId
+          ? events.find(event => event.type === 'user' && this.workflowFrameKind(event) === 'computed task')
+          : undefined;
+        for (const event of firstUser ? [firstUser] : events) {
           if (event.type === 'user') {
             prompt = this.extractPromptFromEvent(event);
             break;
@@ -2149,7 +2150,7 @@ export class ParserService {
         // Only used when the transcript itself names no model — an agent that
         // died before its first assistant turn still knows what it was to run.
         let metaModel: string | undefined;
-        const metaPath = path.join(subagentsDir, `agent-${agentId}.meta.json`);
+        let workflowPhase: string | undefined;
         if (fs.existsSync(metaPath)) {
           try {
             const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -2160,6 +2161,7 @@ export class ParserService {
             toolUseId = typeof meta.toolUseId === 'string' ? meta.toolUseId : undefined;
             spawnDepth = typeof meta.spawnDepth === 'number' ? meta.spawnDepth : undefined;
             metaModel = typeof meta.model === 'string' ? meta.model : undefined;
+            workflowPhase = typeof meta.workflowPhase === 'string' ? meta.workflowPhase : undefined;
           } catch {
             // ignore malformed meta
           }
@@ -2175,6 +2177,7 @@ export class ParserService {
           parentAgentId,
           toolUseId,
           spawnDepth,
+          workflow: workflowRunId ? { runId: workflowRunId, phase: workflowPhase } : undefined,
           startTime: session.startTime,
           endTime: session.endTime,
           durationMs: session.durationMs,
@@ -2192,7 +2195,14 @@ export class ParserService {
       console.error('Error parsing subagents:', err);
     }
 
-    return subagents;
+    // A workflow run's agents come off the disk in directory order, which is
+    // no order at all; they are listed — and so laid out under their run — in
+    // the order they started. Other agents keep their place.
+    const startOf = (s: SubagentInfo) => s.startTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    return [
+      ...subagents.filter(s => !s.workflow),
+      ...subagents.filter(s => s.workflow).sort((a, b) => startOf(a) - startOf(b)),
+    ];
   }
 
   /**
@@ -2212,6 +2222,27 @@ export class ParserService {
     if (subagents.length === 0) return;
     const byId = new Map<string, SubagentInfo>();
     for (const s of subagents) byId.set(s.agentId, s);
+
+    // A workflow's agents name no spawning call at all. Their run id does: the
+    // `Workflow` call that launched the run reports it in its result. The main
+    // session is searched first, then every agent, since an agent can start a
+    // workflow of its own.
+    const workflowSpawner = new Map<string, { step: Step; agentId?: string }>();
+    const indexWorkflows = (owned: Step[], agentId?: string) => {
+      for (const step of owned) {
+        const runId = this.workflowRunIdOf(step);
+        if (runId && !workflowSpawner.has(runId)) workflowSpawner.set(runId, { step, agentId });
+      }
+    };
+    indexWorkflows(steps);
+    for (const s of subagents) indexWorkflows(s.steps, s.agentId);
+    for (const sub of subagents) {
+      if (!sub.workflow || sub.toolUseId) continue;
+      const spawner = workflowSpawner.get(sub.workflow.runId);
+      if (!spawner || spawner.agentId === sub.agentId) continue;
+      sub.parentStepIndex = spawner.step.index;
+      sub.parentAgentId = spawner.agentId;
+    }
 
     for (const sub of subagents) {
       if (!sub.toolUseId) continue;
@@ -2287,6 +2318,35 @@ export class ParserService {
   // Helper methods
 
   /**
+   * Run id a `Workflow` call launched, read off its result. The structured
+   * result names it as `runId`; the text one only through the transcript
+   * directory (`…/subagents/workflows/wf_…`). The script path is no use: a
+   * re-run can point at the script an earlier run wrote, under that run's id.
+   */
+  private workflowRunIdOf(step: Step): string | undefined {
+    if (step.toolName !== 'Workflow' || !step.toolResult) return undefined;
+    try {
+      const result = JSON.parse(step.toolResult);
+      if (typeof result?.runId === 'string' && result.runId) return result.runId;
+    } catch {
+      // fall through to the text form
+    }
+    return step.toolResult.match(/subagents[\\/]+workflows[\\/]+(wf_[A-Za-z0-9_-]+)/)?.[1];
+  }
+
+  /** Which workflow frame a user turn is wrapped in (`computed task`, …). */
+  private workflowFrameKind(event: any): string | undefined {
+    const content = event?.message?.content;
+    const first =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.find((block: any) => block?.type === 'text' && typeof block.text === 'string')?.text
+          : undefined;
+    return typeof first === 'string' ? first.match(WORKFLOW_FRAME_RE)?.[1].trim() : undefined;
+  }
+
+  /**
    * Headline text of a user turn: what the person typed, with the harness's
    * injected wrappers stripped. Turns that are nothing but an
    * `<ide_opened_file>` notice or a compaction caveat return '', so the caller
@@ -2335,7 +2395,7 @@ export class ParserService {
    * ones are frequently glued to the front of the message itself.
    */
   private cleanUserText(text: string): string {
-    const stripped = text.replace(INJECTED_BLOCK_RE, '').trim();
+    const stripped = this.unframeWorkflowText(text.replace(INJECTED_BLOCK_RE, '')).trim();
 
     const name = stripped.match(COMMAND_NAME_RE);
     if (name) {
@@ -2344,6 +2404,21 @@ export class ParserService {
     }
 
     return stripped;
+  }
+
+  /**
+   * A workflow-framed turn reduced to what it says: the instruction header
+   * dropped and the two-space indent the harness adds to every line taken
+   * off. Text that is not framed comes back unchanged.
+   */
+  private unframeWorkflowText(text: string): string {
+    const frame = text.match(WORKFLOW_FRAME_RE);
+    if (!frame) return text;
+    return text
+      .slice(frame[0].length)
+      .split('\n')
+      .map(line => (line.startsWith('  ') ? line.slice(2) : line))
+      .join('\n');
   }
 
   /**

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { AnalysisResult, Step, Subagent, Finding } from '../types/session';
+import { agentKindLabel } from '../utils/agentKind';
 import './AnalysisTab.css';
 
 interface Props {
@@ -143,7 +144,7 @@ const AnalysisTab = ({ analysis, steps, subagents, flatSteps, onGoToStep }: Prop
             <div className="findings-section-header findings-section-agent">
               <h3>
                 <span className="agent-section-label">
-                  {sub.agentType || 'agent'}
+                  {agentKindLabel(sub)}
                 </span>
                 {sub.description || sub.prompt.slice(0, 80)}
               </h3>

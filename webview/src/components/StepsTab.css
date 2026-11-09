@@ -942,6 +942,22 @@
   flex-shrink: 0;
 }
 
+/* An agent a `Workflow` script ran — told apart from `Agent`-spawned ones by
+   hue, since a run's agents are many and come and go as a group. */
+.step-agent-badge-workflow {
+  color: var(--status-info, #3794ff);
+  background: rgba(55, 148, 255, 0.12);
+}
+
+/* Which phase of its workflow run an agent belonged to (`Generate`). */
+.step-agent-phase {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.7;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Only rendered when the agent ran on a different model than the session, so
    it should read as a deviation — outlined, not filled like the type badge. */
 .step-agent-model {

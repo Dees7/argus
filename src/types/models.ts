@@ -327,6 +327,12 @@ export interface SubagentInfo {
   parentStepIndex?: number;
   toolUseId?: string;
   spawnDepth?: number;
+  /**
+   * Set on agents a `Workflow` script ran. They live in
+   * `subagents/workflows/<runId>/` and their meta names no `toolUseId`, so the
+   * run id is what ties them to the `Workflow` call that launched them.
+   */
+  workflow?: SubagentWorkflow;
   startTime?: Date;
   endTime?: Date;
   durationMs?: number;
@@ -337,6 +343,13 @@ export interface SubagentInfo {
   totalCost: number;
   steps: Step[];
   analysis?: AnalysisResult;
+}
+
+export interface SubagentWorkflow {
+  /** `wf_…`, also the name of the directory the agent's transcript is in. */
+  runId: string;
+  /** Phase title the script put the agent in (`Generate`, `Review`). */
+  phase?: string;
 }
 
 // Flattening main + sub-agent steps lives in its own dependency-free module so

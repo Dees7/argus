@@ -3,6 +3,7 @@ import { Step, Subagent, Finding, TokenUsage, spawnKey, stepKey, stepId } from '
 import { formatModelLabel, modelFamilyKey } from '../../../src/types/modelFamily';
 import { formatEffortLabel } from '../../../src/types/effort';
 import ToolRenderer from './ToolRenderer';
+import { agentBadgeLabel, agentFileName, workflowTitle } from '../utils/agentKind';
 import ContentRenderer from './ContentRenderer';
 import Attachments from './Attachments';
 import RendererErrorBoundary from './RendererErrorBoundary';
@@ -202,6 +203,7 @@ const StepIcon = ({ step }: { step: Step }) => {
         </svg>
       );
     case 'Agent':
+    case 'subagent':
       return (
         <svg className="step-icon step-icon-agent" {...stepIconProps} stroke="currentColor">
           <path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" />
@@ -447,13 +449,96 @@ const compileAutoExpand = (patterns: string[]): ((key: string) => boolean) => {
   };
 };
 
+/* ── workflow runs ── */
+// A `Workflow` run is shown as an agent of its own: one row per agent it ran,
+// each row standing to that agent as a `Task` row stands to the agent it
+// spawned. Neither the run nor its rows exist in the transcript — they are
+// made up here, for this tab only, so no other tab counts or bills them.
+const RUN_AGENT_PREFIX = 'workflow-run:';
+const runAgentId = (runId: string) => `${RUN_AGENT_PREFIX}${runId}`;
+const isRunAgentId = (agentId: string) => agentId.startsWith(RUN_AGENT_PREFIX);
+
+interface WorkflowView {
+  /** `subagents` with each workflow agent moved under its row in the run. */
+  subagents: Subagent[];
+  /** One row per workflow agent, owned by the run's agent. */
+  rows: Step[];
+  /** stepId of a row → the agent it stands for. */
+  rowAgent: Map<string, Subagent>;
+  /** Run agent id → how many agents the run started. */
+  runSize: Map<string, number>;
+}
+
+const buildWorkflowView = (subagents: Subagent[], timeline: Step[]): WorkflowView => {
+  const runs = new Map<string, Subagent[]>();
+  for (const sub of subagents) {
+    if (!sub.workflow || typeof sub.parentStepIndex !== 'number') continue;
+    const arr = runs.get(sub.workflow.runId) ?? [];
+    arr.push(sub);
+    runs.set(sub.workflow.runId, arr);
+  }
+  const view: WorkflowView = { subagents, rows: [], rowAgent: new Map(), runSize: new Map() };
+  if (runs.size === 0) return view;
+
+  // A row sits right above its agent's first step. Rows are numbered half a
+  // step before it, so they sort into place in either direction without
+  // taking a number the timeline already uses.
+  const firstKey = new Map<string, number>();
+  for (const st of timeline) {
+    if (!st.agentId) continue;
+    const k = stepKey(st);
+    if (!firstKey.has(st.agentId) || k < firstKey.get(st.agentId)!) firstKey.set(st.agentId, k);
+  }
+
+  const moved = new Map<string, Subagent>();
+  const runAgents: Subagent[] = [];
+  for (const [runId, agents] of runs) {
+    const id = runAgentId(runId);
+    const { parentAgentId, parentStepIndex } = agents[0];
+    const spawner = timeline.find(st => st.agentId === parentAgentId && st.index === parentStepIndex);
+    const spawnerKey = spawner ? stepKey(spawner) : 0;
+    runAgents.push({
+      agentId: id,
+      prompt: '',
+      model: '',
+      agentType: 'workflow',
+      parentAgentId,
+      parentStepIndex,
+      workflow: { runId },
+      stepCount: agents.reduce((acc, a) => acc + a.stepCount, 0),
+      totalCost: agents.reduce((acc, a) => acc + a.totalCost, 0),
+      steps: [],
+    });
+    view.runSize.set(id, agents.length);
+    agents.forEach((agent, i) => {
+      moved.set(agent.agentId, { ...agent, parentAgentId: id, parentStepIndex: i });
+      const anchor = firstKey.get(agent.agentId);
+      const row: Step = {
+        index: i,
+        type: 'subagent',
+        agentId: id,
+        // An agent with no steps yet still gets its row, just below the call.
+        globalIndex: anchor !== undefined ? anchor - 0.5 : spawnerKey + (0.5 * (i + 1)) / (agents.length + 2),
+        stepId: `${id}|${agent.agentId}`,
+        timestamp: agent.startTime,
+        content: agent.prompt,
+        cost: 0,
+      };
+      view.rows.push(row);
+      view.rowAgent.set(row.stepId!, moved.get(agent.agentId)!);
+    });
+  }
+  view.subagents = [...subagents.map(s => moved.get(s.agentId) ?? s), ...runAgents];
+  return view;
+};
+
 /* ── Main component ── */
 // In a flattened (main + sub-agent) timeline, every step has a unique
 // globalIndex. Shared with the tabs that navigate here, so the number they
 // send is the number these rows are keyed by.
 const keyOf = stepKey;
 
-const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, onJumpHandled, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onGoToStep, language }: Props) => {
+const StepsTab = ({ steps, allSteps, subagents: sessionSubagents, mainEffort, findings, jumpTo, onJumpHandled, defaultSortMode = 'newest', autoExpand = [], hideControls = false, onFilteredCountChange, onRevealControls, onGoToStep, language }: Props) => {
   // Steps the user has clicked, i.e. the ones whose state differs from the
   // default that autoExpand gives them. Storing the flips rather than the
   // expanded set means steps appended by a live session pick the setting up
@@ -461,12 +546,23 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   // `stepId`, not the row number: a live agent inserting steps above would
   // otherwise move every click onto the row that slid into its place.
   const [toggledSteps, setToggledSteps] = useState<Set<string>>(new Set());
+
+  // Everything below works off `subagents` with the workflow runs folded in —
+  // see `buildWorkflowView`.
+  const workflowView = useMemo(
+    () => buildWorkflowView(sessionSubagents, allSteps ?? steps),
+    [sessionSubagents, allSteps, steps]
+  );
+  const subagents = workflowView.subagents;
   const [searchQuery, setSearchQuery] = useState('');
   const [toolFilter, setToolFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortMode, setSortMode] = useState(defaultSortMode);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+  // Agents whose collapse state the user has flipped from their default — the
+  // same scheme as `toggledSteps`. A `Workflow` run starts collapsed (it is
+  // often a hundred agents); every agent, a run's own included, starts open.
+  const [toggledAgents, setToggledAgents] = useState<Set<string>>(new Set());
 
   // The settings message normally arrives before the session data, so the
   // state above is already correct. If it lands late, adopt it — unless the
@@ -488,6 +584,10 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     [matchesAutoExpand]
   );
 
+  // A workflow run opens by default only when the `Workflow` step itself is
+  // set to auto-expand — the setting that already decides it for a step.
+  const workflowAgentsOpen = useMemo(() => matchesAutoExpand('Workflow'), [matchesAutoExpand]);
+
   const isStepExpanded = useCallback(
     (step: Step) => isAutoExpanded(step) !== toggledSteps.has(stepId(step)),
     [isAutoExpanded, toggledSteps]
@@ -499,6 +599,14 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     for (const s of subagents) m.set(s.agentId, s);
     return m;
   }, [subagents]);
+
+  const isAgentCollapsed = useCallback(
+    (agentId: string) => {
+      const collapsedByDefault = isRunAgentId(agentId) && !workflowAgentsOpen;
+      return collapsedByDefault !== toggledAgents.has(agentId);
+    },
+    [workflowAgentsOpen, toggledAgents]
+  );
 
   // spawnKey(parentAgentId, local step index) → agents spawned there (for the
   // collapse toggle on Task tool_use rows). Keyed by owning agent too, since a
@@ -523,13 +631,13 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     const m = new Map<string, number>();
     for (const sub of subagents) {
       if (typeof sub.parentStepIndex !== 'number') continue;
-      const spawn = (allSteps ?? steps).find(
+      const spawn = (allSteps ?? steps).concat(workflowView.rows).find(
         s => s.agentId === sub.parentAgentId && s.index === sub.parentStepIndex
       );
       if (spawn) m.set(sub.agentId, keyOf(spawn));
     }
     return m;
-  }, [subagents, allSteps, steps]);
+  }, [subagents, allSteps, steps, workflowView]);
 
   // A sub-agent's report exists twice: as the `SubagentHandback` call in the
   // agent's own thread, and as the message it became in the thread that
@@ -644,7 +752,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   );
 
   const toggleAgent = useCallback((agentId: string) => {
-    setCollapsedAgents(prev => {
+    setToggledAgents(prev => {
       const next = new Set(prev);
       if (next.has(agentId)) next.delete(agentId);
       else next.add(agentId);
@@ -681,8 +789,8 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
   // the collapse sets in the dependency list would re-run the jump whenever a
   // live session appends a step, yanking the view back to a step the user
   // navigated away from minutes ago.
-  const jumpContext = useRef({ steps, isAutoExpanded, onJumpHandled, agentChain });
-  jumpContext.current = { steps, isAutoExpanded, onJumpHandled, agentChain };
+  const jumpContext = useRef({ steps, isAutoExpanded, onJumpHandled, agentChain, isAgentCollapsed });
+  jumpContext.current = { steps, isAutoExpanded, onJumpHandled, agentChain, isAgentCollapsed };
 
   // Jump to the requested step: paint it, force it open, and — if it belongs
   // to a sub-agent the user had collapsed — reveal that agent, or the row
@@ -698,6 +806,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
       isAutoExpanded: autoExpanded,
       onJumpHandled: handled,
       agentChain: chains,
+      isAgentCollapsed: agentCollapsed,
     } = jumpContext.current;
     const target = currentSteps.find(s => keyOf(s) === stepToShow);
 
@@ -717,12 +826,14 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     // chain is opened, not just the agent the step belongs to.
     if (target?.agentId) {
       const chain = chains.get(target.agentId) ?? [target.agentId];
-      setCollapsedAgents(prev => {
-        if (!chain.some(id => prev.has(id))) return prev;
-        const next = new Set(prev);
-        chain.forEach(id => next.delete(id));
-        return next;
-      });
+      const hidden = chain.filter(id => agentCollapsed(id));
+      if (hidden.length > 0) {
+        setToggledAgents(prev => {
+          const next = new Set(prev);
+          hidden.forEach(id => (next.has(id) ? next.delete(id) : next.add(id)));
+          return next;
+        });
+      }
     }
     // Align the step's top edge with the top of the scroll area rather than
     // centring it — an expanded step (a compaction summary especially) can be
@@ -950,7 +1061,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
 
   // Filtered and sorted steps
   const filteredSteps = useMemo(() => {
-    let result = [...steps];
+    let result = [...steps, ...workflowView.rows];
 
     // Text search. The message id is searchable too, which is what turns
     // "msg_011CeTce1p" into "the blocks of one API response" — the cost links
@@ -983,13 +1094,11 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     }
 
     // Hide steps whose owning agent — or any of its ancestors — is collapsed
-    if (collapsedAgents.size > 0) {
-      result = result.filter(s => {
-        if (!s.agentId) return true;
-        const chain = agentChain.get(s.agentId) ?? [s.agentId];
-        return !chain.some(id => collapsedAgents.has(id));
-      });
-    }
+    result = result.filter(s => {
+      if (!s.agentId) return true;
+      const chain = agentChain.get(s.agentId) ?? [s.agentId];
+      return !chain.some(id => isAgentCollapsed(id));
+    });
 
     // Sorting — keyOf preserves chronological order for both main and agent
     // steps in the flattened list.
@@ -1001,7 +1110,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
     }
 
     return result;
-  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, collapsedAgents, agentChain]);
+  }, [steps, searchQuery, toolFilter, statusFilter, sortMode, stepFindings, isAgentCollapsed, agentChain, workflowView]);
 
   // Tree shape of the list, per row. An agent's run is the stretch of rows
   // that belong to it or to the agents it spawned, so a nested agent's steps
@@ -1327,12 +1436,16 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
             const ownerAgent = step.agentId ? subagentById.get(step.agentId) : undefined;
             // A Task row may itself sit inside an agent transcript, so look the
             // spawned agents up by (owning agent, local step index).
-            const linkedAgents =
-              step.toolName === 'Task' || step.toolName === 'Agent'
+            const isWorkflowSpawn = step.toolName === 'Workflow';
+            // A row of a workflow run: it stands for one agent of the run.
+            const rowAgent = workflowView.rowAgent.get(stepId(step));
+            const linkedAgents = rowAgent
+              ? [rowAgent]
+              : step.toolName === 'Task' || step.toolName === 'Agent' || isWorkflowSpawn
                 ? agentsByParent.get(spawnKey(step.agentId, step.index))
                 : undefined;
             const allCollapsed = linkedAgents
-              ? linkedAgents.every(a => collapsedAgents.has(a.agentId))
+              ? linkedAgents.every(a => isAgentCollapsed(a.agentId))
               : false;
             // Where a `SendMessage` went, and — for one addressed to this
             // session's own agent — the call that started that agent, so the
@@ -1364,6 +1477,80 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
             // Nesting level drives the indent and connector offsets in CSS:
             // 0 = main session, 1 = agent, 2 = agent spawned by an agent.
             const depth = step.agentId ? (agentChain.get(step.agentId)?.length ?? 1) : 0;
+
+            // One agent of a workflow run. The row is the agent's handle, the
+            // way a `Task` row is for the agent it spawned — clicking it shows
+            // or hides the agent's steps; it has no body of its own.
+            if (rowAgent) {
+              const open = !allCollapsed;
+              return (
+                <div
+                  key={stepId(step)}
+                  style={{ '--depth': String(depth) } as React.CSSProperties}
+                  className={[
+                    'step-item',
+                    'step-item-agent',
+                    'step-item-workflow-agent',
+                    open ? 'step-item-task' : '',
+                    isFirstAgentInRun ? 'step-agent-first' : '',
+                    isLastAgentInRun ? 'step-agent-last' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  {shape.pass.map(level => (
+                    <span
+                      key={level}
+                      className="step-tree-pass"
+                      style={{ '--level': String(level) } as React.CSSProperties}
+                    />
+                  ))}
+                  <button
+                    className="step-header"
+                    onClick={() => toggleAgent(rowAgent.agentId)}
+                    title={open ? 'Hide agent steps' : 'Show agent steps'}
+                  >
+                    {open && <span className="step-spawn-stub" />}
+                    <div className="step-left">
+                      <StepIcon step={step} />
+                      <span className="step-time">{formatTime(step.timestamp)}</span>
+                      <span
+                        className="step-agent-badge step-agent-badge-workflow"
+                        title={workflowTitle(rowAgent)}
+                      >
+                        {agentBadgeLabel(rowAgent)}
+                      </span>
+                      {rowAgent.workflow?.phase && (
+                        <span className="step-agent-phase">{rowAgent.workflow.phase}</span>
+                      )}
+                      <span className="step-agent-ref">
+                        <span className="step-agent-id" title={`Agent session: ${agentFileName(rowAgent)}`}>
+                          {rowAgent.agentId}
+                        </span>
+                        {modelBadge(rowAgent)}
+                        {effortBadge(rowAgent)}
+                      </span>
+                      <span className={`step-task-toggle${open ? '' : ' collapsed'}`}>
+                        {open ? '▾' : '▸'} {rowAgent.stepCount} agent steps
+                      </span>
+                      {rowAgent.prompt && (
+                        <span className="step-summary">{rowAgent.prompt.split('\n')[0]}</span>
+                      )}
+                    </div>
+                    <div className="step-right">
+                      {typeof rowAgent.durationMs === 'number' && (
+                        <span className={`step-duration${rowAgent.durationMs >= 5000 ? ' slow' : ''}`}>
+                          {formatDuration(rowAgent.durationMs)}
+                        </span>
+                      )}
+                      {rowAgent.totalCost > 0 && (
+                        <span className="step-cost" title="Everything this agent spent">
+                          ${rowAgent.totalCost.toFixed(4)}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                </div>
+              );
+            }
 
             return (
               <div
@@ -1404,8 +1591,11 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                     </span>
                     {ownerAgent && (
                       <>
-                        <span className="step-agent-badge" title={ownerAgent.description || ownerAgent.prompt}>
-                          {ownerAgent.agentType || 'agent'}
+                        <span
+                          className={`step-agent-badge${ownerAgent.workflow ? ' step-agent-badge-workflow' : ''}`}
+                          title={workflowTitle(ownerAgent) || ownerAgent.description || ownerAgent.prompt}
+                        >
+                          {agentBadgeLabel(ownerAgent)}
                         </span>
                         {/* Model/effort are shown once, on the spawn row below —
                           repeating them on every one of the agent's own steps
@@ -1415,7 +1605,7 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                           so a row can be traced back to its own session file. */}
                         <span
                           className="step-agent-id"
-                          title={`Agent session: agent-${ownerAgent.agentId}.jsonl`}
+                          title={`Agent session: ${agentFileName(ownerAgent)}`}
                         >
                           {ownerAgent.agentId}
                         </span>
@@ -1547,11 +1737,21 @@ const StepsTab = ({ steps, allSteps, subagents, mainEffort, findings, jumpTo, on
                       <>
                         {/* The spawning Task row carries the id(s) of the agent
                           session(s) it started, mirroring the agent rows below. */}
-                        {linkedAgents.map(a => (
+                        {/* A workflow run can start a hundred agents; their ids
+                          would bury the row, so it says how many instead. */}
+                        {isWorkflowSpawn && (
+                          <span
+                            className="step-agent-badge step-agent-badge-workflow"
+                            title={`Workflow run ${linkedAgents[0].workflow?.runId ?? ''}`}
+                          >
+                            {linkedAgents.reduce((acc, a) => acc + (workflowView.runSize.get(a.agentId) ?? 0), 0)} workflow agents
+                          </span>
+                        )}
+                        {!isWorkflowSpawn && linkedAgents.map(a => (
                           <span key={a.agentId} className="step-agent-ref">
                             <span
                               className="step-agent-id"
-                              title={`Agent session: agent-${a.agentId}.jsonl${a.agentType ? ` (${a.agentType})` : ''}`}
+                              title={`Agent session: ${agentFileName(a)}${a.agentType ? ` (${a.agentType})` : ''}`}
                             >
                               {a.agentId}
                             </span>

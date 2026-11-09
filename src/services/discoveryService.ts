@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SessionSummary } from '../types/models';
 import { getClaudeConfigDir } from '../utils/claudePaths';
+import { listSubagentTranscripts } from '../utils/subagentFiles';
 import { ParserService } from './parserService';
 import { SearchTarget } from './searchService';
 
@@ -393,20 +394,13 @@ export class DiscoveryService {
   // Helper methods
 
   /**
-   * Sub-agent transcripts live in `<projectDir>/<sessionId>/subagents/*.jsonl`.
-   * They carry no session file of their own, so full-text search has to reach
-   * them through their parent session.
+   * Sub-agent transcripts live in `<projectDir>/<sessionId>/subagents/` —
+   * directly, or under `workflows/<runId>/` for agents a `Workflow` ran. They
+   * carry no session file of their own, so full-text search has to reach them
+   * through their parent session.
    */
   private listSubagentFiles(projDir: string, sessionId: string): string[] {
-    const dir = path.join(projDir, sessionId, 'subagents');
-    try {
-      return fs
-        .readdirSync(dir, { withFileTypes: true })
-        .filter(e => e.isFile() && e.name.endsWith('.jsonl'))
-        .map(e => path.join(dir, e.name));
-    } catch {
-      return [];
-    }
+    return listSubagentTranscripts(projDir, sessionId).map(t => t.filePath);
   }
 
   private hasProjectsDir(claudeDir: string): boolean {

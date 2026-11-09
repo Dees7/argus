@@ -1,5 +1,6 @@
 import { Subagent } from '../types/session';
 import { TOTAL_FILTER, MAIN_FILTER, AgentFilter } from '../utils/agentFilter';
+import { agentKindLabel } from '../utils/agentKind';
 import './AgentFilterBar.css';
 
 interface Props {
@@ -9,10 +10,12 @@ interface Props {
 }
 
 // Disambiguates same-typed agents ("explore 1", "explore 2", …) without
-// needing anything beyond the order they're already listed in.
+// needing anything beyond the order they're already listed in. A workflow
+// agent has a label of its own from the script (`gen 001`), which says more.
 function agentLabel(sub: Subagent, subagents: Subagent[]): string {
-  const base = sub.agentType || 'agent';
-  const sameType = subagents.filter(s => (s.agentType || 'agent') === base);
+  if (sub.workflow && sub.description) return `workflow: ${sub.description}`;
+  const base = agentKindLabel(sub);
+  const sameType = subagents.filter(s => agentKindLabel(s) === base);
   return sameType.length > 1 ? `${base} ${sameType.indexOf(sub) + 1}` : base;
 }
 
